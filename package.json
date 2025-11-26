@@ -1,0 +1,22 @@
+{
+	"name": "ujian-online",
+	"version": "1.0.0",
+	"description": "Aplikasi Ujian Online Multi-Port",
+	"scripts": {
+		"dev:backend": "cd backend && npm run start:dev",
+		"dev:admin": "cd admin-panel && npm run dev",
+		"dev:student": "cd student-portal && npm run dev",
+		"install:all": "npm install && cd backend && npm install && cd ../admin-panel && npm install && cd ../student-portal && npm install",
+		"build:all": "cd backend && npm run build && cd ../admin-panel && npm run build && cd ../student-portal && npm run build"
+	},
+	"keywords": [
+		"ujian",
+		"online",
+		"anbk",
+		"exam",
+		"nestjs",
+		"nextjs"
+	],
+	"author": "",
+	"license": "MIT"
+}
