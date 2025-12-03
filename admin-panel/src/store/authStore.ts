@@ -13,6 +13,7 @@ interface AuthState {
 	user: User | null;
 	token: string | null;
 	isAuthenticated: boolean;
+	isHydrated: boolean;
 	login: (email: string, password: string) => Promise<void>;
 	logout: () => void;
 	checkAuth: () => void;
@@ -24,6 +25,7 @@ export const useAuthStore = create<AuthState>()(
 			user: null,
 			token: null,
 			isAuthenticated: false,
+			isHydrated: false,
 
 			login: async (email: string, password: string) => {
 				try {
@@ -67,7 +69,10 @@ export const useAuthStore = create<AuthState>()(
 						user,
 						token,
 						isAuthenticated: true,
+						isHydrated: true,
 					});
+				} else {
+					set({ isHydrated: true });
 				}
 			},
 		}),

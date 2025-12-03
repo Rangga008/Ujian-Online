@@ -1,78 +1,101 @@
-import { IsString, IsNumber, IsDate, IsEnum, IsOptional, IsBoolean } from 'class-validator';
-import { Type } from 'class-transformer';
-import { ExamStatus } from '../exam.entity';
+import {
+	IsString,
+	IsNumber,
+	IsDate,
+	IsEnum,
+	IsOptional,
+	IsBoolean,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { ExamStatus } from "../exam.entity";
 
 export class CreateExamDto {
-  @IsString()
-  title: string;
+	@IsString()
+	title: string;
 
-  @IsString()
-  description: string;
+	@IsString()
+	description: string;
 
-  @IsNumber()
-  duration: number;
+	@IsNumber()
+	duration: number;
 
-  @Type(() => Date)
-  @IsDate()
-  startTime: Date;
+	@Type(() => Date)
+	@IsDate()
+	startTime: Date;
 
-  @Type(() => Date)
-  @IsDate()
-  endTime: Date;
+	@Type(() => Date)
+	@IsDate()
+	endTime: Date;
 
-  @IsOptional()
-  @IsEnum(ExamStatus)
-  status?: ExamStatus;
+	@IsOptional()
+	@IsEnum(ExamStatus)
+	status?: ExamStatus;
 
-  @IsOptional()
-  @IsNumber()
-  totalScore?: number;
+	@IsOptional()
+	@IsNumber()
+	totalScore?: number;
 
-  @IsOptional()
-  @IsBoolean()
-  randomizeQuestions?: boolean;
+	@IsOptional()
+	@IsBoolean()
+	randomizeQuestions?: boolean;
 
-  @IsOptional()
-  @IsBoolean()
-  showResultImmediately?: boolean;
+	@IsOptional()
+	@IsBoolean()
+	showResultImmediately?: boolean;
+
+	@IsOptional()
+	@IsNumber()
+	classId?: number;
+
+	@IsOptional()
+	@IsNumber()
+	semesterId?: number;
 }
 
 export class UpdateExamDto {
-  @IsOptional()
-  @IsString()
-  title?: string;
+	@IsOptional()
+	@IsString()
+	title?: string;
 
-  @IsOptional()
-  @IsString()
-  description?: string;
+	@IsOptional()
+	@IsString()
+	description?: string;
 
-  @IsOptional()
-  @IsNumber()
-  duration?: number;
+	@IsOptional()
+	@IsNumber()
+	duration?: number;
 
-  @IsOptional()
-  @Type(() => Date)
-  @IsDate()
-  startTime?: Date;
+	@IsOptional()
+	@Type(() => Date)
+	@IsDate()
+	startTime?: Date;
 
-  @IsOptional()
-  @Type(() => Date)
-  @IsDate()
-  endTime?: Date;
+	@IsOptional()
+	@Type(() => Date)
+	@IsDate()
+	endTime?: Date;
 
-  @IsOptional()
-  @IsEnum(ExamStatus)
-  status?: ExamStatus;
+	@IsOptional()
+	@IsEnum(ExamStatus)
+	status?: ExamStatus;
 
-  @IsOptional()
-  @IsNumber()
-  totalScore?: number;
+	@IsOptional()
+	@IsNumber()
+	totalScore?: number;
 
-  @IsOptional()
-  @IsBoolean()
-  randomizeQuestions?: boolean;
+	@IsOptional()
+	@IsBoolean()
+	randomizeQuestions?: boolean;
 
-  @IsOptional()
-  @IsBoolean()
-  showResultImmediately?: boolean;
+	@IsOptional()
+	@IsBoolean()
+	showResultImmediately?: boolean;
+
+	@IsOptional()
+	@IsNumber()
+	classId?: number;
+
+	@IsOptional()
+	@IsNumber()
+	semesterId?: number;
 }

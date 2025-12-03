@@ -1,46 +1,63 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum } from 'class-validator';
-import { UserRole } from '../user.entity';
+import {
+	IsEmail,
+	IsString,
+	MinLength,
+	IsOptional,
+	IsEnum,
+	IsBoolean,
+} from "class-validator";
+import { UserRole } from "../user.entity";
 
 export class CreateUserDto {
-  @IsEmail()
-  email: string;
+	@IsEmail()
+	email: string;
 
-  @IsString()
-  @MinLength(6)
-  password: string;
+	@IsString()
+	@MinLength(6)
+	password: string;
 
-  @IsString()
-  name: string;
+	@IsString()
+	name: string;
 
-  @IsEnum(UserRole)
-  role: UserRole;
+	@IsEnum(UserRole)
+	role: UserRole;
 
-  @IsOptional()
-  @IsString()
-  nis?: string;
+	@IsOptional()
+	@IsString()
+	nis?: string; // For students
 
-  @IsOptional()
-  @IsString()
-  kelas?: string;
-
-  @IsOptional()
-  @IsString()
-  jurusan?: string;
+	@IsOptional()
+	@IsString()
+	nip?: string; // For teachers
 }
 
 export class UpdateUserDto {
-  @IsOptional()
-  @IsString()
-  name?: string;
+	@IsOptional()
+	@IsEmail()
+	email?: string;
 
-  @IsOptional()
-  @IsString()
-  kelas?: string;
+	@IsOptional()
+	@IsString()
+	@MinLength(6)
+	password?: string;
 
-  @IsOptional()
-  @IsString()
-  jurusan?: string;
+	@IsOptional()
+	@IsString()
+	name?: string;
 
-  @IsOptional()
-  isActive?: boolean;
+	@IsOptional()
+	@IsEnum(UserRole)
+	role?: UserRole;
+
+	@IsOptional()
+	@IsString()
+	nis?: string;
+
+	@IsOptional()
+	@IsString()
+	nip?: string;
+
+	@IsOptional()
+	@IsBoolean()
+	isActive?: boolean;
 }

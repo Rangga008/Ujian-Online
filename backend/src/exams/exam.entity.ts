@@ -1,62 +1,95 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
-import { Question } from '../questions/question.entity';
-import { Submission } from '../submissions/submission.entity';
+import {
+	Entity,
+	PrimaryGeneratedColumn,
+	Column,
+	CreateDateColumn,
+	UpdateDateColumn,
+	OneToMany,
+	ManyToOne,
+	JoinColumn,
+} from "typeorm";
+import { Question } from "../questions/question.entity";
+import { Submission } from "../submissions/submission.entity";
+import { Semester } from "../semesters/semester.entity";
+import { Subject } from "../subjects/subject.entity";
+import { Class } from "../classes/class.entity";
 
 export enum ExamStatus {
-  DRAFT = 'draft',
-  PUBLISHED = 'published',
-  ONGOING = 'ongoing',
-  CLOSED = 'closed',
+	DRAFT = "draft",
+	PUBLISHED = "published",
+	ONGOING = "ongoing",
+	CLOSED = "closed",
 }
 
-@Entity('exams')
+@Entity("exams")
 export class Exam {
-  @PrimaryGeneratedColumn()
-  id: number;
+	@PrimaryGeneratedColumn()
+	id: number;
 
-  @Column()
-  title: string;
+	@Column()
+	title: string;
 
-  @Column({ type: 'text' })
-  description: string;
+	@Column({ type: "text" })
+	description: string;
 
-  @Column()
-  duration: number; // in minutes
+	@Column({ nullable: true })
+	semesterId: number;
 
-  @Column({ type: 'datetime' })
-  startTime: Date;
+	@ManyToOne(() => Semester, (semester) => semester.exams)
+	@JoinColumn({ name: "semesterId" })
+	semester: Semester;
 
-  @Column({ type: 'datetime' })
-  endTime: Date;
+	@Column({ nullable: true })
+	subjectId: number;
 
-  @Column({
-    type: 'enum',
-    enum: ExamStatus,
-    default: ExamStatus.DRAFT,
-  })
-  status: ExamStatus;
+	@ManyToOne(() => Subject, (subject) => subject.exams)
+	@JoinColumn({ name: "subjectId" })
+	subject: Subject;
 
-  @Column({ default: 0 })
-  totalQuestions: number;
+	@Column({ nullable: true })
+	classId: number; // Target class for this exam
 
-  @Column({ default: 100 })
-  totalScore: number;
+	@ManyToOne(() => Class, (classEntity) => classEntity.id)
+	@JoinColumn({ name: "classId" })
+	class: Class;
 
-  @Column({ default: true })
-  randomizeQuestions: boolean;
+	@Column()
+	duration: number; // in minutes
 
-  @Column({ default: false })
-  showResultImmediately: boolean;
+	@Column({ type: "datetime" })
+	startTime: Date;
 
-  @OneToMany(() => Question, (question) => question.exam, { cascade: true })
-  questions: Question[];
+	@Column({ type: "datetime" })
+	endTime: Date;
 
-  @OneToMany(() => Submission, (submission) => submission.exam)
-  submissions: Submission[];
+	@Column({
+		type: "enum",
+		enum: ExamStatus,
+		default: ExamStatus.DRAFT,
+	})
+	status: ExamStatus;
 
-  @CreateDateColumn()
-  createdAt: Date;
+	@Column({ default: 0 })
+	totalQuestions: number;
 
-  @UpdateDateColumn()
-  updatedAt: Date;
+	@Column({ default: 100 })
+	totalScore: number;
+
+	@Column({ default: true })
+	randomizeQuestions: boolean;
+
+	@Column({ default: false })
+	showResultImmediately: boolean;
+
+	@OneToMany(() => Question, (question) => question.exam, { cascade: true })
+	questions: Question[];
+
+	@OneToMany(() => Submission, (submission) => submission.exam)
+	submissions: Submission[];
+
+	@CreateDateColumn()
+	createdAt: Date;
+
+	@UpdateDateColumn()
+	updatedAt: Date;
 }

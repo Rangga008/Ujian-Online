@@ -1,50 +1,72 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
-import { Submission } from '../submissions/submission.entity';
+import {
+	Entity,
+	PrimaryGeneratedColumn,
+	Column,
+	CreateDateColumn,
+	UpdateDateColumn,
+	OneToMany,
+	ManyToMany,
+	JoinTable,
+} from "typeorm";
+import { Class } from "../classes/class.entity";
+import { Subject } from "../subjects/subject.entity";
+import { Student } from "../students/student.entity";
 
 export enum UserRole {
-  ADMIN = 'admin',
-  STUDENT = 'student',
+	ADMIN = "admin",
+	TEACHER = "teacher",
+	STUDENT = "student",
 }
 
-@Entity('users')
+@Entity("users")
 export class User {
-  @PrimaryGeneratedColumn()
-  id: number;
+	@PrimaryGeneratedColumn()
+	id: number;
 
-  @Column({ unique: true })
-  email: string;
+	@Column({ unique: true })
+	email: string;
 
-  @Column({ nullable: true })
-  nis: string; // Nomor Induk Siswa
+	@Column({ unique: true, nullable: true })
+	nis: string; // Nomor Induk Siswa (untuk student)
 
-  @Column()
-  password: string;
+	@Column({ unique: true, nullable: true })
+	nip: string; // Nomor Induk Pegawai (untuk guru)
 
-  @Column()
-  name: string;
+	@Column()
+	password: string;
 
-  @Column({
-    type: 'enum',
-    enum: UserRole,
-    default: UserRole.STUDENT,
-  })
-  role: UserRole;
+	@Column()
+	name: string; // Nama untuk display (bisa nama guru atau nama siswa)
 
-  @Column({ nullable: true })
-  kelas: string;
+	@Column({
+		type: "enum",
+		enum: UserRole,
+		default: UserRole.STUDENT,
+	})
+	role: UserRole;
 
-  @Column({ nullable: true })
-  jurusan: string;
+	@Column({ default: true })
+	isActive: boolean;
 
-  @Column({ default: true })
-  isActive: boolean;
+	// Relasi untuk student data per semester
+	@OneToMany(() => Student, (student) => student.user)
+	students: Student[];
 
-  @OneToMany(() => Submission, (submission) => submission.user)
-  submissions: Submission[];
+	// Untuk guru
+	@ManyToMany(() => Subject, (subject) => subject.teachers)
+	@JoinTable({
+		name: "teacher_subjects",
+		joinColumn: { name: "teacherId", referencedColumnName: "id" },
+		inverseJoinColumn: { name: "subjectId", referencedColumnName: "id" },
+	})
+	subjects: Subject[];
 
-  @CreateDateColumn()
-  createdAt: Date;
+	@ManyToMany(() => Class, (classEntity) => classEntity.teachers)
+	teachingClasses: Class[];
 
-  @UpdateDateColumn()
-  updatedAt: Date;
+	@CreateDateColumn()
+	createdAt: Date;
+
+	@UpdateDateColumn()
+	updatedAt: Date;
 }

@@ -54,16 +54,18 @@ Ujian-Online/
 │   ├── tsconfig.json
 │   └── nest-cli.json
 │
-├── admin-panel/                      # Admin Panel (Next.js) - Port 3000
+├── admin-panel/                      # Admin Panel (Next.js) - Port 3000 (merged from old `frontend-admin`)
 │   ├── src/
 │   │   ├── components/
 │   │   │   └── Layout.tsx            # Admin layout dengan sidebar
 │   │   │
 │   │   ├── lib/
-│   │   │   └── api.ts                # Axios instance dengan interceptors
+│   │   │   ├── api.ts                # Axios instance dengan interceptors
+│   │   │   └── settingsApi.ts        # Helper API untuk CRUD & bulk settings
 │   │   │
 │   │   ├── store/
-│   │   │   └── authStore.ts          # Zustand store untuk auth
+│   │   │   ├── authStore.ts          # Zustand store untuk auth
+│   │   │   └── settingsStore.ts      # Zustand store untuk pengaturan
 │   │   │
 │   │   ├── styles/
 │   │   │   └── globals.css           # Global styles + Tailwind
@@ -403,3 +405,14 @@ Ujian-Online/
 ---
 
 Semua port bisa diubah melalui file `.env` tanpa perlu ubah kode! 🎉
+
+---
+
+## 🧩 Catatan Migrasi Frontend Admin
+
+Folder `frontend-admin` telah digabung ke dalam `admin-panel` untuk menghindari duplikasi. Store dan API terkait settings sekarang berada di:
+
+- `admin-panel/src/lib/settingsApi.ts`
+- `admin-panel/src/store/settingsStore.ts`
+
+Anda dapat menghapus folder `frontend-admin` setelah verifikasi.

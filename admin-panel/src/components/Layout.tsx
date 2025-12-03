@@ -1,5 +1,6 @@
 import { useEffect, ReactNode } from "react";
 import { useRouter } from "next/router";
+import ActiveSemesterBanner from "./ActiveSemesterBanner";
 import { useAuthStore } from "@/store/authStore";
 import Link from "next/link";
 
@@ -26,8 +27,12 @@ export default function Layout({ children }: LayoutProps) {
 	const menuItems = [
 		{ href: "/dashboard", label: "Dashboard", icon: "📊" },
 		{ href: "/exams", label: "Kelola Ujian", icon: "📝" },
+		{ href: "/users", label: "Kelola User", icon: "👤" },
 		{ href: "/students", label: "Kelola Siswa", icon: "👥" },
+		{ href: "/classes", label: "Kelola Kelas", icon: "🏫" },
+		{ href: "/semesters", label: "Tahun Ajaran", icon: "📅" },
 		{ href: "/results", label: "Hasil Ujian", icon: "📈" },
+		{ href: "/settings", label: "Pengaturan", icon: "⚙️" },
 	];
 
 	if (!isAuthenticated) return null;
@@ -64,6 +69,10 @@ export default function Layout({ children }: LayoutProps) {
 						<p className="text-xs text-gray-600">{user?.email}</p>
 					</div>
 					<button onClick={handleLogout} className="w-full btn btn-secondary">
+						{/* Compact active semester banner for consistency across pages */}
+						<div className="mb-4">
+							<ActiveSemesterBanner variant="compact" />
+						</div>
 						Logout
 					</button>
 				</div>
