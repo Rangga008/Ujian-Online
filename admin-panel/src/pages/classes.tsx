@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
+import Pagination from "@/components/Pagination";
 import { classesApi } from "@/lib/classesApi";
 import { semestersApi } from "@/lib/semestersApi";
 import { api } from "@/lib/api";
@@ -45,6 +46,9 @@ export default function ClassesPage() {
 	const [loading, setLoading] = useState(true);
 	const [showModal, setShowModal] = useState(false);
 	const [editingClass, setEditingClass] = useState<Class | null>(null);
+	const [searchQuery, setSearchQuery] = useState<string>("");
+	const [currentPage, setCurrentPage] = useState(1);
+	const [itemsPerPage, setItemsPerPage] = useState(10);
 	const [formData, setFormData] = useState({
 		name: "",
 		grade: 10,
@@ -199,10 +203,35 @@ export default function ClassesPage() {
 		setShowModal(true);
 	};
 
-	const filteredClasses =
-		selectedSemesterId === "all"
-			? classes
-			: classes.filter((c) => c.semesterId === selectedSemesterId);
+	const allFilteredClasses = classes
+		.filter((cls) =>
+			selectedSemesterId === "all"
+				? true
+				: cls.semesterId === selectedSemesterId
+		)
+		.filter((cls) => {
+			if (!searchQuery.trim()) return true;
+			const query = searchQuery.toLowerCase();
+			return (
+				cls.name.toLowerCase().includes(query) ||
+				cls.major.toLowerCase().includes(query) ||
+				String(cls.grade).includes(query)
+			);
+		});
+
+	const totalPages = Math.ceil(allFilteredClasses.length / itemsPerPage);
+	const startIndex = (currentPage - 1) * itemsPerPage;
+	const endIndex = startIndex + itemsPerPage;
+	const paginatedClasses = allFilteredClasses.slice(startIndex, endIndex);
+
+	const handlePageChange = (page: number) => {
+		setCurrentPage(page);
+	};
+
+	const handleItemsPerPageChange = (newItemsPerPage: number) => {
+		setItemsPerPage(newItemsPerPage);
+		setCurrentPage(1);
+	};
 
 	return (
 		<Layout>
@@ -252,8 +281,20 @@ export default function ClassesPage() {
 					</div>
 				</div>
 
-				{/* Filters: Semester */}
-				<div className="flex items-end mb-4">
+				{/* Filters: Search and Semester */}
+				<div className="flex gap-4 items-end mb-4">
+					<div className="flex-1">
+						<label className="block text-sm font-medium mb-2">
+							Cari Kelas:
+						</label>
+						<input
+							type="text"
+							value={searchQuery}
+							onChange={(e) => setSearchQuery(e.target.value)}
+							placeholder="Cari nama kelas, jurusan, atau tingkat..."
+							className="input"
+						/>
+					</div>
 					<div>
 						<label className="block text-sm font-medium mb-2">
 							Filter Semester:
@@ -304,7 +345,7 @@ export default function ClassesPage() {
 									</tr>
 								</thead>
 								<tbody>
-									{filteredClasses.map((cls) => (
+									{paginatedClasses.map((cls) => (
 										<tr key={cls.id}>
 											<td className="font-medium">{cls.name}</td>
 											<td>Kelas {cls.grade}</td>
@@ -335,6 +376,12 @@ export default function ClassesPage() {
 											<td>
 												<div className="flex gap-2">
 													<button
+														onClick={() => router.push(`/classes/${cls.id}`)}
+														className="btn btn-primary btn-sm"
+													>
+														Detail
+													</button>
+													<button
 														onClick={() => handleEdit(cls)}
 														className="btn btn-secondary btn-sm"
 													>
@@ -354,6 +401,14 @@ export default function ClassesPage() {
 							</table>
 						</div>
 					)}
+					<Pagination
+						currentPage={currentPage}
+						totalPages={totalPages}
+						itemsPerPage={itemsPerPage}
+						totalItems={allFilteredClasses.length}
+						onPageChange={handlePageChange}
+						onItemsPerPageChange={handleItemsPerPageChange}
+					/>
 				</div>
 			</div>
 

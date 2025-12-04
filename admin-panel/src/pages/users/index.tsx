@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
+import Pagination from "@/components/Pagination";
 import api from "@/lib/api";
 import toast from "react-hot-toast";
 import classesApi, { Class } from "@/lib/classesApi";
@@ -21,39 +22,20 @@ interface User {
 	} | null;
 }
 
-interface StudentHistory {
-	id: number;
-	semesterId: number;
-	semester: {
-		id: number;
-		name: string;
-		year: string;
-		type: string;
-		isActive: boolean;
-	};
-	classId: number | null;
-	class: {
-		id: number;
-		name: string;
-		grade: string;
-		major: string;
-	} | null;
-	isActive: boolean;
-}
-
 export default function UsersPage() {
 	const [users, setUsers] = useState<User[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [showModal, setShowModal] = useState(false);
 	const [editingUser, setEditingUser] = useState<User | null>(null);
 	const [selectedRole, setSelectedRole] = useState<string>("all");
+	const [searchQuery, setSearchQuery] = useState<string>("");
 	const [classes, setClasses] = useState<Class[]>([]);
 	const [activeSemester, setActiveSemester] = useState<Semester | null>(null);
-	const [showHistoryModal, setShowHistoryModal] = useState(false);
-	const [historyData, setHistoryData] = useState<StudentHistory[]>([]);
 	const [showAssignModal, setShowAssignModal] = useState(false);
 	const [assigningUser, setAssigningUser] = useState<User | null>(null);
 	const [assignClassId, setAssignClassId] = useState<number | null>(null);
+	const [currentPage, setCurrentPage] = useState(1);
+	const [itemsPerPage, setItemsPerPage] = useState(10);
 
 	const [formData, setFormData] = useState({
 		name: "",
@@ -184,17 +166,6 @@ export default function UsersPage() {
 		}
 	};
 
-	const handleShowHistory = async (user: User) => {
-		if (user.role !== "student") return;
-		try {
-			const response = await api.get(`/students/user/${user.id}/history`);
-			setHistoryData(response.data);
-			setShowHistoryModal(true);
-		} catch (error) {
-			toast.error("Gagal memuat riwayat semester");
-		}
-	};
-
 	const handleOpenAssignModal = (user: User) => {
 		setAssigningUser(user);
 		setAssignClassId(user.activeStudent?.classId || null);
@@ -229,10 +200,34 @@ export default function UsersPage() {
 		}
 	};
 
-	const filteredUsers =
-		selectedRole === "all"
-			? users
-			: users.filter((user) => user.role === selectedRole);
+	const allFilteredUsers = users
+		.filter((user) =>
+			selectedRole === "all" ? true : user.role === selectedRole
+		)
+		.filter((user) => {
+			if (!searchQuery.trim()) return true;
+			const query = searchQuery.toLowerCase();
+			return (
+				user.name.toLowerCase().includes(query) ||
+				user.email.toLowerCase().includes(query) ||
+				(user.nis && user.nis.toLowerCase().includes(query)) ||
+				(user.nip && user.nip.toLowerCase().includes(query))
+			);
+		});
+
+	const totalPages = Math.ceil(allFilteredUsers.length / itemsPerPage);
+	const startIndex = (currentPage - 1) * itemsPerPage;
+	const endIndex = startIndex + itemsPerPage;
+	const paginatedUsers = allFilteredUsers.slice(startIndex, endIndex);
+
+	const handlePageChange = (page: number) => {
+		setCurrentPage(page);
+	};
+
+	const handleItemsPerPageChange = (newItemsPerPage: number) => {
+		setItemsPerPage(newItemsPerPage);
+		setCurrentPage(1);
+	};
 
 	if (loading) {
 		return (
@@ -265,18 +260,34 @@ export default function UsersPage() {
 					</button>
 				</div>
 
-				<div className="mb-4">
-					<label className="block text-sm font-medium mb-2">Filter Role:</label>
-					<select
-						value={selectedRole}
-						onChange={(e) => setSelectedRole(e.target.value)}
-						className="input max-w-xs"
-					>
-						<option value="all">Semua Role</option>
-						<option value="admin">Admin</option>
-						<option value="teacher">Guru</option>
-						<option value="student">Siswa</option>
-					</select>
+				<div className="mb-4 flex gap-4 items-end">
+					<div className="flex-1">
+						<label className="block text-sm font-medium mb-2">
+							Cari Pengguna:
+						</label>
+						<input
+							type="text"
+							value={searchQuery}
+							onChange={(e) => setSearchQuery(e.target.value)}
+							placeholder="Cari nama, email, NIS, atau NIP..."
+							className="input"
+						/>
+					</div>
+					<div>
+						<label className="block text-sm font-medium mb-2">
+							Filter Role:
+						</label>
+						<select
+							value={selectedRole}
+							onChange={(e) => setSelectedRole(e.target.value)}
+							className="input max-w-xs"
+						>
+							<option value="all">Semua Role</option>
+							<option value="admin">Admin</option>
+							<option value="teacher">Guru</option>
+							<option value="student">Siswa</option>
+						</select>
+					</div>
 				</div>
 
 				<div className="card">
@@ -293,7 +304,7 @@ export default function UsersPage() {
 								</tr>
 							</thead>
 							<tbody>
-								{filteredUsers.map((user) => (
+								{paginatedUsers.map((user) => (
 									<tr key={user.id} className="border-b hover:bg-gray-50">
 										<td className="p-4 font-medium">{user.name}</td>
 										<td className="p-4">{user.email}</td>
@@ -342,14 +353,6 @@ export default function UsersPage() {
 												>
 													Detail
 												</Link>
-												{user.role === "student" && (
-													<button
-														onClick={() => handleShowHistory(user)}
-														className="text-blue-600 hover:text-blue-700"
-													>
-														History
-													</button>
-												)}
 												<button
 													onClick={() => handleOpenModal(user)}
 													className="text-blue-600 hover:text-blue-700"
@@ -369,6 +372,14 @@ export default function UsersPage() {
 							</tbody>
 						</table>
 					</div>
+					<Pagination
+						currentPage={currentPage}
+						totalPages={totalPages}
+						itemsPerPage={itemsPerPage}
+						totalItems={allFilteredUsers.length}
+						onPageChange={handlePageChange}
+						onItemsPerPageChange={handleItemsPerPageChange}
+					/>
 				</div>
 
 				{/* Modal Create/Edit User */}
@@ -498,65 +509,6 @@ export default function UsersPage() {
 									</button>
 								</div>
 							</form>
-						</div>
-					</div>
-				)}
-
-				{/* Modal History */}
-				{showHistoryModal && (
-					<div
-						className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-						onClick={() => setShowHistoryModal(false)}
-					>
-						<div
-							className="bg-white rounded-lg p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
-							onClick={(e) => e.stopPropagation()}
-						>
-							<h2 className="text-2xl font-bold mb-6">Riwayat Semester</h2>
-							<div className="overflow-x-auto">
-								<table className="w-full">
-									<thead>
-										<tr className="border-b">
-											<th className="text-left p-4">Semester</th>
-											<th className="text-left p-4">Tahun</th>
-											<th className="text-left p-4">Kelas</th>
-											<th className="text-left p-4">Status</th>
-										</tr>
-									</thead>
-									<tbody>
-										{historyData.map((record) => (
-											<tr key={record.id} className="border-b hover:bg-gray-50">
-												<td className="p-4">{record.semester?.name || "-"}</td>
-												<td className="p-4">{record.semester?.year || "-"}</td>
-												<td className="p-4">
-													{record.class
-														? `${record.class.name} - ${record.class.major}`
-														: "-"}
-												</td>
-												<td className="p-4">
-													<span
-														className={`px-3 py-1 rounded-full text-sm ${
-															record.isActive
-																? "bg-green-100 text-green-800"
-																: "bg-gray-100 text-gray-800"
-														}`}
-													>
-														{record.isActive ? "Aktif" : "Nonaktif"}
-													</span>
-												</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							</div>
-							<div className="flex justify-end mt-6">
-								<button
-									onClick={() => setShowHistoryModal(false)}
-									className="btn btn-secondary"
-								>
-									Tutup
-								</button>
-							</div>
 						</div>
 					</div>
 				)}

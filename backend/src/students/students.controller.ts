@@ -8,10 +8,18 @@ import {
 	Delete,
 	Query,
 	UseGuards,
+	UploadedFile,
+	UseInterceptors,
+	Res,
+	BadRequestException,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { Response } from "express";
+import * as XLSX from "xlsx";
 import { StudentsService } from "./students.service";
 import { CreateStudentDto } from "./dto/create-student.dto";
 import { UpdateStudentDto } from "./dto/update-student.dto";
+import { ImportStudentsDto } from "./dto/import-students.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { Student } from "./student.entity";
 import { User } from "../users/user.entity";
@@ -25,6 +33,105 @@ export class StudentsController {
 	@Post()
 	create(@Body() createStudentDto: CreateStudentDto) {
 		return this.studentsService.create(createStudentDto);
+	}
+
+	@Get("download-template")
+	async downloadTemplate(@Res({ passthrough: false }) res: Response) {
+		try {
+			// Create workbook and worksheet
+			const wb = XLSX.utils.book_new();
+			const wsData = [
+				["Nama", "Email", "NIS", "Password"],
+				["John Doe", "john@example.com", "2024001", "password123"],
+				["Jane Smith", "jane@example.com", "2024002", "password456"],
+			];
+			const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+			// Set column widths
+			ws["!cols"] = [
+				{ wch: 20 }, // Nama
+				{ wch: 25 }, // Email
+				{ wch: 15 }, // NIS
+				{ wch: 15 }, // Password
+			];
+
+			XLSX.utils.book_append_sheet(wb, ws, "Siswa");
+
+			// Generate buffer
+			const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+			// Set headers and send file
+			res.setHeader(
+				"Content-Disposition",
+				"attachment; filename=template-import-siswa.xlsx"
+			);
+			res.setHeader(
+				"Content-Type",
+				"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+			);
+			return res.send(buf);
+		} catch (error) {
+			console.error("Error generating template:", error);
+			return res.status(500).json({
+				statusCode: 500,
+				message: "Gagal membuat template: " + error.message,
+			});
+		}
+	}
+
+	@Post("import")
+	@UseInterceptors(FileInterceptor("file"))
+	async importStudents(
+		@UploadedFile() file: Express.Multer.File,
+		@Body("semesterId") semesterId: string,
+		@Body("classId") classId?: string
+	) {
+		if (!file) {
+			throw new BadRequestException("File Excel diperlukan");
+		}
+
+		if (!semesterId) {
+			throw new BadRequestException("Semester ID diperlukan");
+		}
+
+		try {
+			// Parse Excel file
+			const workbook = XLSX.read(file.buffer, { type: "buffer" });
+			const sheetName = workbook.SheetNames[0];
+			const worksheet = workbook.Sheets[sheetName];
+			const data = XLSX.utils.sheet_to_json(worksheet) as any[];
+
+			if (data.length === 0) {
+				throw new BadRequestException("File Excel kosong");
+			}
+
+			// Validate headers
+			const firstRow = data[0];
+			const requiredHeaders = ["Nama", "Email", "NIS", "Password"];
+			const hasAllHeaders = requiredHeaders.every((h) => h in firstRow);
+
+			if (!hasAllHeaders) {
+				throw new BadRequestException(
+					"Format file tidak sesuai. Pastikan kolom: Nama, Email, NIS, Password"
+				);
+			}
+
+			// Import students
+			const result = await this.studentsService.importStudents(
+				data,
+				+semesterId,
+				classId ? +classId : undefined
+			);
+
+			return result;
+		} catch (error) {
+			if (error instanceof BadRequestException) {
+				throw error;
+			}
+			throw new BadRequestException(
+				"Gagal memproses file Excel: " + error.message
+			);
+		}
 	}
 
 	@Get()
@@ -112,7 +219,10 @@ export class StudentsController {
 
 	// Assign class to student in active semester
 	@Patch(":id/assign-class")
-	async assignClass(@Param("id") id: string, @Body("classId") classId: number) {
+	async assignClass(
+		@Param("id") id: string,
+		@Body("classId") classId: number | null
+	) {
 		return this.studentsService.update(+id, { classId });
 	}
 

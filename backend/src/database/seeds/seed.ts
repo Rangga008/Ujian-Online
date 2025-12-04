@@ -293,7 +293,10 @@ async function seed() {
 		}
 		console.log("Subjects created");
 
-		// Create Classes (more variety)
+		// Active semester for class creation
+		const activeSemester = savedSemesters.find((s) => s.isActive);
+
+		// Create Classes (more variety) - Assign to active semester
 		const classes = [
 			// Grade 10
 			{
@@ -302,6 +305,7 @@ async function seed() {
 				major: "IPA",
 				academicYear: 2024,
 				capacity: 36,
+				semesterId: activeSemester.id,
 				isActive: true,
 			},
 			{
@@ -310,6 +314,7 @@ async function seed() {
 				major: "IPA",
 				academicYear: 2024,
 				capacity: 36,
+				semesterId: activeSemester.id,
 				isActive: true,
 			},
 			{
@@ -318,6 +323,7 @@ async function seed() {
 				major: "IPS",
 				academicYear: 2024,
 				capacity: 36,
+				semesterId: activeSemester.id,
 				isActive: true,
 			},
 			// Grade 11
@@ -327,6 +333,7 @@ async function seed() {
 				major: "IPA",
 				academicYear: 2024,
 				capacity: 36,
+				semesterId: activeSemester.id,
 				isActive: true,
 			},
 			{
@@ -335,6 +342,7 @@ async function seed() {
 				major: "IPA",
 				academicYear: 2024,
 				capacity: 36,
+				semesterId: activeSemester.id,
 				isActive: true,
 			},
 			{
@@ -343,6 +351,7 @@ async function seed() {
 				major: "IPS",
 				academicYear: 2024,
 				capacity: 36,
+				semesterId: activeSemester.id,
 				isActive: true,
 			},
 			// Grade 12
@@ -352,6 +361,7 @@ async function seed() {
 				major: "IPA",
 				academicYear: 2024,
 				capacity: 36,
+				semesterId: activeSemester.id,
 				isActive: true,
 			},
 			{
@@ -360,6 +370,7 @@ async function seed() {
 				major: "IPA",
 				academicYear: 2024,
 				capacity: 36,
+				semesterId: activeSemester.id,
 				isActive: true,
 			},
 			{
@@ -368,6 +379,7 @@ async function seed() {
 				major: "IPS",
 				academicYear: 2024,
 				capacity: 36,
+				semesterId: activeSemester.id,
 				isActive: true,
 			},
 		];
@@ -378,7 +390,9 @@ async function seed() {
 			const saved = await classRepo.save(classEntity);
 			savedClasses.push(saved);
 		}
-		console.log("Classes created (9 classes across 3 grades)");
+		console.log(
+			"Classes created (9 classes for active semester across 3 grades)"
+		);
 
 		// Create Admin
 		const hashedAdminPassword = await bcrypt.hash("admin123", 10);
@@ -541,9 +555,6 @@ async function seed() {
 		}
 		console.log("Student accounts created (10 students)");
 
-		// Active semester for student data
-		const activeSemester = savedSemesters.find((s) => s.isActive);
-
 		// Create Student Data (per semester) - for active semester
 		const studentNames = [
 			{
@@ -684,13 +695,14 @@ async function seed() {
 		);
 
 		// Historical records for 3 students across multiple semesters
+		// NOTE: classId is null because no classes exist for old semesters
 		const historicalRecords = [
-			// Budi Santoso - 3 previous semesters
+			// Budi Santoso - 3 previous semesters (no class assignment in old semesters)
 			{
 				userId: savedStudentUsers[0].id,
 				semesterId: semesterGanjil2024.id,
 				name: "Budi Santoso",
-				classId: savedClasses[5].id, // 11 IPS 1
+				classId: null, // No classes in old semester
 				gender: Gender.MALE,
 				dateOfBirth: new Date("2007-05-15"),
 				phone: "081234567891",
@@ -703,7 +715,7 @@ async function seed() {
 				userId: savedStudentUsers[0].id,
 				semesterId: semesterGenap2023.id,
 				name: "Budi Santoso",
-				classId: savedClasses[2].id, // 10 IPS 1
+				classId: null, // No classes in old semester
 				gender: Gender.MALE,
 				dateOfBirth: new Date("2007-05-15"),
 				phone: "081234567891",
@@ -716,7 +728,7 @@ async function seed() {
 				userId: savedStudentUsers[0].id,
 				semesterId: semesterGanjil2023.id,
 				name: "Budi Santoso",
-				classId: savedClasses[2].id, // 10 IPS 1
+				classId: null, // No classes in old semester
 				gender: Gender.MALE,
 				dateOfBirth: new Date("2007-05-15"),
 				phone: "081234567891",
@@ -725,12 +737,12 @@ async function seed() {
 				parentPhone: "081234567801",
 				isActive: false,
 			},
-			// Siti Nurhaliza - 2 previous semesters
+			// Siti Nurhaliza - 2 previous semesters (no class assignment in old semesters)
 			{
 				userId: savedStudentUsers[1].id,
 				semesterId: semesterGanjil2024.id,
 				name: "Siti Nurhaliza",
-				classId: savedClasses[5].id, // 11 IPS 1
+				classId: null, // No classes in old semester
 				gender: Gender.FEMALE,
 				dateOfBirth: new Date("2007-08-22"),
 				phone: "081234567892",
@@ -743,7 +755,7 @@ async function seed() {
 				userId: savedStudentUsers[1].id,
 				semesterId: semesterGenap2023.id,
 				name: "Siti Nurhaliza",
-				classId: savedClasses[2].id, // 10 IPS 1
+				classId: null, // No classes in old semester
 				gender: Gender.FEMALE,
 				dateOfBirth: new Date("2007-08-22"),
 				phone: "081234567892",
@@ -752,12 +764,12 @@ async function seed() {
 				parentPhone: "081234567802",
 				isActive: false,
 			},
-			// Ahmad Fauzi - 1 previous semester
+			// Ahmad Fauzi - 1 previous semester (no class assignment in old semester)
 			{
 				userId: savedStudentUsers[2].id,
 				semesterId: semesterGanjil2024.id,
 				name: "Ahmad Fauzi",
-				classId: savedClasses[4].id, // 11 IPA 2
+				classId: null, // No classes in old semester
 				gender: Gender.MALE,
 				dateOfBirth: new Date("2007-11-10"),
 				phone: "081234567893",

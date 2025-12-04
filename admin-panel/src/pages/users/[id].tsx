@@ -14,23 +14,7 @@ interface UserDetail {
 	role: "admin" | "teacher" | "student";
 	nis?: string;
 	nip?: string;
-	activeStudent?: {
-		id: number;
-		classId: number | null;
-		class: Class | null;
-	} | null;
-}
-
-interface StudentHistoryRecord {
-	id: number;
-	semesterId: number;
-	semesterName: string;
-	semesterYear: string;
 	isActive: boolean;
-	classId: number | null;
-	className: string | null;
-	classGrade: string | null;
-	classMajor: string | null;
 }
 
 export default function UserDetailPage() {
@@ -41,10 +25,16 @@ export default function UserDetailPage() {
 	const [user, setUser] = useState<UserDetail | null>(null);
 	const [classes, setClasses] = useState<Class[]>([]);
 	const [activeSemester, setActiveSemester] = useState<Semester | null>(null);
-	const [history, setHistory] = useState<StudentHistoryRecord[]>([]);
+	const [semesters, setSemesters] = useState<Semester[]>([]);
+	const [studentRecords, setStudentRecords] = useState<any[]>([]);
 
-	const [showAssignModal, setShowAssignModal] = useState(false);
-	const [assignClassId, setAssignClassId] = useState<number | null>(null);
+	const [showAddModal, setShowAddModal] = useState(false);
+	const [showEditClassModal, setShowEditClassModal] = useState(false);
+	const [editingStudent, setEditingStudent] = useState<any | null>(null);
+	const [selectedSemesterId, setSelectedSemesterId] = useState<number | null>(
+		null
+	);
+	const [selectedClassId, setSelectedClassId] = useState<string>("");
 
 	useEffect(() => {
 		if (!id) return;
@@ -54,24 +44,23 @@ export default function UserDetailPage() {
 	const fetchAll = async () => {
 		setLoading(true);
 		try {
-			const [u, cls, active] = await Promise.all([
+			const [u, cls, active, allSemesters, studentsData] = await Promise.all([
 				api.get(`/users/${id}`).then((r) => r.data),
 				classesApi.getAll(),
 				semestersApi.getActive().catch(() => null),
+				semestersApi.getAll(),
+				api
+					.get(`/students/user/${id}`)
+					.then((r) => r.data)
+					.catch(() => []),
 			]);
+			console.log("Fetched user:", u);
+			console.log("User students:", studentsData);
 			setUser(u);
 			setClasses(cls);
 			setActiveSemester(active);
-
-			if (u?.role === "student") {
-				const hist = await api
-					.get(`/students/user/${u.id}/history`)
-					.then((r) => r.data as StudentHistoryRecord[]);
-				console.log("Fetched history:", hist);
-				setHistory(hist);
-			} else {
-				setHistory([]);
-			}
+			setSemesters(allSemesters);
+			setStudentRecords(studentsData);
 		} catch (error) {
 			console.error("Fetch all error:", error);
 			toast.error("Gagal memuat detail pengguna");
@@ -82,31 +71,97 @@ export default function UserDetailPage() {
 
 	const openAssign = () => {
 		if (!user) return;
-		setAssignClassId(user.activeStudent?.classId ?? null);
-		setShowAssignModal(true);
+		// Find active student record from students array
+		const activeStudent = studentRecords.find((s) => s.semester?.isActive);
+		setEditingStudent(activeStudent || null);
+		// Convert null to empty string for dropdown
+		setSelectedClassId(
+			activeStudent?.classId === null
+				? ""
+				: String(activeStudent?.classId || "")
+		);
+		setShowEditClassModal(true);
+	};
+
+	const handleAddToSemester = async () => {
+		if (!selectedSemesterId) {
+			toast.error("Pilih semester terlebih dahulu");
+			return;
+		}
+
+		// Check if student already exists in this semester
+		const exists = studentRecords.find(
+			(s) => s.semesterId === selectedSemesterId
+		);
+		if (exists) {
+			toast.error("Siswa sudah terdaftar di semester ini");
+			return;
+		}
+
+		try {
+			await api.post("/students", {
+				userId: user!.id,
+				semesterId: selectedSemesterId,
+				classId: selectedClassId === "" ? null : parseInt(selectedClassId),
+				name: user!.name,
+			});
+
+			toast.success("Siswa berhasil ditambahkan ke semester");
+			setShowAddModal(false);
+			setSelectedSemesterId(null);
+			setSelectedClassId("");
+			await fetchAll();
+		} catch (error: any) {
+			toast.error(error.response?.data?.message || "Gagal menambahkan siswa");
+		}
+	};
+
+	const handleRemoveFromSemester = async (studentId: number) => {
+		if (
+			!confirm(
+				"Yakin ingin menghapus siswa dari semester ini? Data ujian dan nilai akan ikut terhapus."
+			)
+		)
+			return;
+
+		try {
+			await api.delete(`/students/${studentId}`);
+			toast.success("Siswa berhasil dihapus dari semester");
+			await fetchAll();
+		} catch (error: any) {
+			toast.error(error.response?.data?.message || "Gagal menghapus siswa");
+		}
 	};
 
 	const assignClass = async () => {
-		if (!user?.activeStudent) {
+		if (!editingStudent) {
 			toast.error("Data siswa tidak ditemukan");
 			return;
 		}
 
 		console.log("Assigning class:", {
-			studentId: user.activeStudent.id,
-			classId: assignClassId,
+			studentId: editingStudent.id,
+			classId: selectedClassId,
 		});
 
 		try {
+			// Send null if "Belum ada kelas" is selected, otherwise parse as integer
+			const classIdToSend =
+				selectedClassId === null || selectedClassId === ""
+					? null
+					: parseInt(selectedClassId as string);
+
 			const response = await api.patch(
-				`/students/${user.activeStudent.id}/assign-class`,
+				`/students/${editingStudent.id}/assign-class`,
 				{
-					classId: assignClassId,
+					classId: classIdToSend,
 				}
 			);
 			console.log("Assign class response:", response.data);
 			toast.success("Kelas berhasil diperbarui");
-			setShowAssignModal(false);
+			setShowEditClassModal(false);
+			setEditingStudent(null);
+			setSelectedClassId("");
 			await fetchAll();
 		} catch (error: any) {
 			console.error("Assign class error:", error);
@@ -133,9 +188,13 @@ export default function UserDetailPage() {
 	}
 
 	const isStudent = user.role === "student";
-	const filteredClasses = activeSemester
-		? classes.filter((c) => c.semesterId === activeSemester.id)
-		: classes;
+	const activeStudent = studentRecords.find((s) => s.semester?.isActive);
+
+	// Get available semesters (not yet enrolled)
+	const enrolledSemesterIds = studentRecords.map((s: any) => s.semesterId);
+	const availableSemesters = semesters.filter(
+		(sem) => !enrolledSemesterIds.includes(sem.id)
+	);
 
 	return (
 		<Layout>
@@ -206,8 +265,8 @@ export default function UserDetailPage() {
 								<div>
 									<div className="text-sm text-gray-500">Kelas Saat Ini</div>
 									<div className="text-lg font-medium">
-										{user.activeStudent?.class
-											? `${user.activeStudent.class.name} - ${user.activeStudent.class.major}`
+										{activeStudent?.class
+											? `${activeStudent.class.name} - ${activeStudent.class.major}`
 											: "Belum ada kelas"}
 									</div>
 								</div>
@@ -215,8 +274,9 @@ export default function UserDetailPage() {
 									<button
 										onClick={openAssign}
 										className="btn btn-primary w-full"
+										disabled={!activeStudent}
 									>
-										Assign Kelas
+										Ubah Kelas
 									</button>
 								</div>
 							</div>
@@ -225,7 +285,26 @@ export default function UserDetailPage() {
 						{/* History */}
 						<div className="card">
 							<div className="p-6">
-								<h2 className="text-xl font-semibold mb-4">Riwayat Semester</h2>
+								<div className="flex items-center justify-between mb-4">
+									<h2 className="text-xl font-semibold">
+										Riwayat Semester ({studentRecords.length})
+									</h2>
+									<button
+										onClick={() => setShowAddModal(true)}
+										className="btn btn-primary"
+										disabled={availableSemesters.length === 0}
+									>
+										+ Tambah ke Semester
+									</button>
+								</div>
+
+								{availableSemesters.length === 0 &&
+									studentRecords.length > 0 && (
+										<div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+											ℹ️ Siswa sudah terdaftar di semua semester yang tersedia.
+										</div>
+									)}
+
 								<div className="overflow-x-auto">
 									<table className="w-full">
 										<thead>
@@ -234,40 +313,94 @@ export default function UserDetailPage() {
 												<th className="text-left p-4">Tahun</th>
 												<th className="text-left p-4">Kelas</th>
 												<th className="text-left p-4">Status</th>
+												<th className="text-left p-4">Aksi</th>
 											</tr>
 										</thead>
 										<tbody>
-											{history.map((h) => (
-												<tr key={h.id} className="border-b hover:bg-gray-50">
-													<td className="p-4">{h.semesterName || "-"}</td>
-													<td className="p-4">{h.semesterYear || "-"}</td>
-													<td className="p-4">
-														{h.className
-															? `${h.className} - ${h.classMajor}`
-															: "-"}
-													</td>
-													<td className="p-4">
-														<span
-															className={`px-3 py-1 rounded-full text-sm ${
-																h.isActive
-																	? "bg-green-100 text-green-800"
-																	: "bg-gray-100 text-gray-800"
-															}`}
-														>
-															{h.isActive ? "Aktif" : "Nonaktif"}
-														</span>
-													</td>
-												</tr>
-											))}
-											{history.length === 0 && (
+											{studentRecords.length === 0 ? (
 												<tr>
 													<td
 														className="p-4 text-center text-gray-500"
-														colSpan={4}
+														colSpan={5}
 													>
-														Belum ada riwayat.
+														Siswa belum terdaftar di semester manapun.
 													</td>
 												</tr>
+											) : (
+												studentRecords
+													.sort((a: any, b: any) => {
+														// Sort by year descending, then by type
+														if (a.semester.year !== b.semester.year) {
+															return b.semester.year.localeCompare(
+																a.semester.year
+															);
+														}
+														return a.semester.type === "ganjil" ? -1 : 1;
+													})
+													.map((record: any) => (
+														<tr
+															key={record.id}
+															className="border-b hover:bg-gray-50"
+														>
+															<td className="p-4">
+																<span className="font-medium">
+																	{record.semester.name}
+																</span>
+																{record.semester.isActive && (
+																	<span className="ml-2 text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">
+																		AKTIF
+																	</span>
+																)}
+															</td>
+															<td className="p-4">{record.semester.year}</td>
+															<td className="p-4">
+																{record.class ? (
+																	<span>
+																		{record.class.name} - {record.class.major}
+																	</span>
+																) : (
+																	<span className="text-gray-500">
+																		Belum ada kelas
+																	</span>
+																)}
+															</td>
+															<td className="p-4">
+																<span
+																	className={`px-3 py-1 rounded-full text-sm ${
+																		record.semester.isActive
+																			? "bg-green-100 text-green-800"
+																			: "bg-gray-100 text-gray-800"
+																	}`}
+																>
+																	{record.semester.isActive
+																		? "Aktif"
+																		: "Nonaktif"}
+																</span>
+															</td>
+															<td className="p-4">
+																<div className="flex gap-2">
+																	<button
+																		onClick={() => {
+																			setEditingStudent(record);
+																			setSelectedClassId(record.classId);
+																			setShowEditClassModal(true);
+																		}}
+																		className="text-blue-600 hover:text-blue-700"
+																	>
+																		Ubah Kelas
+																	</button>
+																	<button
+																		onClick={() =>
+																			handleRemoveFromSemester(record.id)
+																		}
+																		className="text-red-600 hover:text-red-700"
+																	>
+																		Hapus
+																	</button>
+																</div>
+															</td>
+														</tr>
+													))
 											)}
 										</tbody>
 									</table>
@@ -277,53 +410,155 @@ export default function UserDetailPage() {
 					</>
 				)}
 
-				{/* Assign class modal */}
-				{showAssignModal && (
+				{/* Add to Semester Modal */}
+				{showAddModal && (
 					<div
 						className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-						onClick={() => setShowAssignModal(false)}
+						onClick={() => setShowAddModal(false)}
 					>
 						<div
 							className="bg-white rounded-lg p-8 max-w-md w-full"
 							onClick={(e) => e.stopPropagation()}
 						>
-							<h3 className="text-2xl font-bold mb-6">Assign Kelas</h3>
+							<h3 className="text-2xl font-bold mb-6">
+								Tambah Siswa ke Semester
+							</h3>
+
+							{availableSemesters.length === 0 ? (
+								<div className="text-center py-8 text-gray-500">
+									Tidak ada semester yang tersedia.
+									<br />
+									Siswa sudah terdaftar di semua semester.
+								</div>
+							) : (
+								<div className="space-y-4">
+									<div>
+										<label className="block text-sm font-medium mb-2">
+											Pilih Semester <span className="text-red-500">*</span>
+										</label>
+										<select
+											value={selectedSemesterId || ""}
+											onChange={(e) => {
+												setSelectedSemesterId(
+													e.target.value ? parseInt(e.target.value) : null
+												);
+												setSelectedClassId(""); // Reset class selection
+											}}
+											className="input"
+											required
+										>
+											<option value="">-- Pilih Semester --</option>
+											{availableSemesters.map((sem) => (
+												<option key={sem.id} value={sem.id}>
+													{sem.name} - {sem.year}
+													{sem.isActive ? " (AKTIF)" : ""}
+												</option>
+											))}
+										</select>
+									</div>
+
+									{selectedSemesterId && (
+										<div>
+											<label className="block text-sm font-medium mb-2">
+												Pilih Kelas (Opsional)
+											</label>
+											<select
+												value={selectedClassId}
+												onChange={(e) => setSelectedClassId(e.target.value)}
+												className="input"
+											>
+												<option value="">Belum ada kelas</option>
+												{classes
+													.filter((c) => c.semesterId === selectedSemesterId)
+													.map((cls) => (
+														<option key={cls.id} value={cls.id}>
+															{cls.name} - {cls.major}
+														</option>
+													))}
+											</select>
+										</div>
+									)}
+								</div>
+							)}
+
+							<div className="flex gap-3 pt-6">
+								<button
+									onClick={handleAddToSemester}
+									className="btn btn-primary flex-1"
+									disabled={!selectedSemesterId}
+								>
+									Tambahkan
+								</button>
+								<button
+									onClick={() => {
+										setShowAddModal(false);
+										setSelectedSemesterId(null);
+										setSelectedClassId("");
+									}}
+									className="btn btn-secondary flex-1"
+								>
+									Batal
+								</button>
+							</div>
+						</div>
+					</div>
+				)}
+
+				{/* Edit Class Modal */}
+				{showEditClassModal && editingStudent && (
+					<div
+						className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+						onClick={() => setShowEditClassModal(false)}
+					>
+						<div
+							className="bg-white rounded-lg p-8 max-w-md w-full"
+							onClick={(e) => e.stopPropagation()}
+						>
+							<h3 className="text-2xl font-bold mb-6">Ubah Kelas</h3>
+							<p className="text-sm text-gray-600 mb-4">
+								Semester: {editingStudent.semester?.name} -{" "}
+								{editingStudent.semester?.year}
+							</p>
+
 							<div className="space-y-4">
 								<div>
 									<label className="block text-sm font-medium mb-2">
 										Pilih Kelas
 									</label>
 									<select
-										value={assignClassId ?? ""}
-										onChange={(e) =>
-											setAssignClassId(
-												e.target.value ? parseInt(e.target.value) : null
-											)
-										}
+										value={selectedClassId}
+										onChange={(e) => setSelectedClassId(e.target.value)}
 										className="input"
 									>
-										<option value="">Tidak ada kelas</option>
-										{filteredClasses.map((cls) => (
-											<option key={cls.id} value={cls.id}>
-												{cls.name} - {cls.major}
-											</option>
-										))}
+										<option value="">Belum ada kelas</option>
+										{classes
+											.filter((c) => c.semesterId === editingStudent.semesterId)
+											.map((cls) => (
+												<option key={cls.id} value={cls.id}>
+													{cls.name} - {cls.major}
+												</option>
+											))}
 									</select>
 								</div>
-								<div className="flex gap-3 pt-4">
-									<button
-										onClick={assignClass}
-										className="btn btn-primary flex-1"
-									>
-										Simpan
-									</button>
-									<button
-										onClick={() => setShowAssignModal(false)}
-										className="btn btn-secondary flex-1"
-									>
-										Batal
-									</button>
-								</div>
+							</div>
+
+							<div className="flex gap-3 pt-6">
+								<button
+									onClick={assignClass}
+									className="btn btn-primary flex-1"
+								>
+									Simpan
+								</button>
+								<button
+									onClick={() => {
+										setShowEditClassModal(false);
+										setEditingStudent(null);
+										setSelectedClassId(null);
+									}}
+									className="btn btn-secondary flex-1"
+								>
+									Batal
+								</button>
 							</div>
 						</div>
 					</div>
