@@ -64,40 +64,59 @@ export default function ClassesPage() {
 		fetchData();
 	}, []);
 
-	// Refetch classes when semester filter changes (server-side param if available)
+	// Refetch classes when semester filter changes
 	useEffect(() => {
 		const refetch = async () => {
 			try {
 				setLoading(true);
-				const params: Record<string, any> = {};
-				if (selectedSemesterId !== "all") {
-					params.semesterId = selectedSemesterId;
+				let res;
+				if (selectedSemesterId === "all") {
+					res = await api.get("/classes");
+				} else if (activeSemester && selectedSemesterId === activeSemester.id) {
+					// Use optimized active semester endpoint
+					res = await api.get("/classes/active-semester");
+				} else {
+					res = await api.get("/classes", {
+						params: { semesterId: selectedSemesterId },
+					});
 				}
-				const res = await api.get("/classes", { params });
 				setClasses(res.data);
 			} catch (e) {
-				// fallback: keep existing
+				console.error("Error refetching classes:", e);
 			} finally {
 				setLoading(false);
 			}
 		};
 
-		refetch();
-	}, [selectedSemesterId]);
+		if (activeSemester !== null) {
+			refetch();
+		}
+	}, [selectedSemesterId, activeSemester]);
 
 	const fetchData = async () => {
 		try {
 			setLoading(true);
-			const [classesData, semestersData, activeData] = await Promise.all([
-				classesApi.getAll(),
+			const [semestersData, activeData] = await Promise.all([
 				semestersApi.getAll(),
 				semestersApi.getActive().catch(() => null),
 			]);
 
-			setClasses(classesData);
 			setSemesters(semestersData);
 			setActiveSemester(activeData);
-			setSelectedSemesterId(activeData ? activeData.id : "all");
+
+			// Set filter to active semester by default
+			const defaultSemesterId = activeData ? activeData.id : "all";
+			setSelectedSemesterId(defaultSemesterId);
+
+			// Fetch classes from active semester
+			let classesData;
+			if (activeData) {
+				const res = await api.get("/classes/active-semester");
+				classesData = res.data;
+			} else {
+				classesData = await classesApi.getAll();
+			}
+			setClasses(classesData);
 		} catch (error) {
 			console.error("Error fetching data:", error);
 			alert("Gagal memuat data");
@@ -374,7 +393,7 @@ export default function ClassesPage() {
 												</span>
 											</td>
 											<td>
-												<div className="flex gap-2">
+												<div className="flex gap-2 flex-wrap">
 													<button
 														onClick={() => router.push(`/classes/${cls.id}`)}
 														className="btn btn-primary btn-sm"

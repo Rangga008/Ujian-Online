@@ -32,7 +32,7 @@ export class SubjectsService {
 
 	async findAll(): Promise<Subject[]> {
 		return await this.subjectRepository.find({
-			relations: ["teachers", "exams", "questionBanks"],
+			relations: ["teachers", "exams"],
 			order: { name: "ASC" },
 		});
 	}
@@ -40,7 +40,7 @@ export class SubjectsService {
 	async findOne(id: number): Promise<Subject> {
 		const subject = await this.subjectRepository.findOne({
 			where: { id },
-			relations: ["teachers", "exams", "questionBanks"],
+			relations: ["teachers", "exams"],
 		});
 
 		if (!subject) {

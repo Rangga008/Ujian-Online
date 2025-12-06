@@ -21,6 +21,11 @@ export enum ExamStatus {
 	CLOSED = "closed",
 }
 
+export enum ExamTargetType {
+	CLASS = "class",
+	GRADE = "grade",
+}
+
 @Entity("exams")
 export class Exam {
 	@PrimaryGeneratedColumn()
@@ -52,6 +57,16 @@ export class Exam {
 	@ManyToOne(() => Class, (classEntity) => classEntity.id)
 	@JoinColumn({ name: "classId" })
 	class: Class;
+
+	@Column({
+		type: "enum",
+		enum: ExamTargetType,
+		default: ExamTargetType.CLASS,
+	})
+	targetType: ExamTargetType;
+
+	@Column({ nullable: true })
+	grade: string; // Grade level (10, 11, 12) when targetType is GRADE
 
 	@Column()
 	duration: number; // in minutes

@@ -41,6 +41,18 @@ export class ExamsController {
 		return this.examsService.findActiveExams();
 	}
 
+	@Get("schedule")
+	@UseGuards(RolesGuard)
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
+	getSchedule(
+		@Query("startDate") startDate?: string,
+		@Query("endDate") endDate?: string,
+		@Query("semesterId") semesterId?: string
+	) {
+		const semesterIdNum = semesterId ? Number(semesterId) : undefined;
+		return this.examsService.getSchedule(startDate, endDate, semesterIdNum);
+	}
+
 	@Get("class/:classId")
 	@UseGuards(RolesGuard)
 	@Roles(UserRole.ADMIN, UserRole.TEACHER)

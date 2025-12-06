@@ -820,7 +820,10 @@ async function seed() {
 		];
 
 		for (const qbData of questionBanks) {
-			const qb = questionBankRepo.create(qbData);
+			const qb = questionBankRepo.create({
+				...qbData,
+				type: qbData.type as any,
+			});
 			await questionBankRepo.save(qb);
 		}
 		console.log("Question Bank created");

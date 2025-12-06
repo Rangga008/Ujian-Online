@@ -6,9 +6,12 @@ import { ClassesService } from "./classes.service";
 import { User } from "../users/user.entity";
 import { Semester } from "../semesters/semester.entity";
 import { Student } from "../students/student.entity";
+import { Subject } from "../subjects/subject.entity";
 
 @Module({
-	imports: [TypeOrmModule.forFeature([Class, User, Student, Semester])],
+	imports: [
+		TypeOrmModule.forFeature([Class, User, Student, Semester, Subject]),
+	],
 	controllers: [ClassesController],
 	providers: [ClassesService],
 	exports: [ClassesService],

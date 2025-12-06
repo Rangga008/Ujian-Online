@@ -5,6 +5,7 @@ import { Exam, ExamStatus } from "./exam.entity";
 import { CreateExamDto, UpdateExamDto } from "./dto/exam.dto";
 import { Semester } from "../semesters/semester.entity";
 import { Class } from "../classes/class.entity";
+import { Question } from "../questions/question.entity";
 
 @Injectable()
 export class ExamsService {
@@ -14,7 +15,9 @@ export class ExamsService {
 		@InjectRepository(Semester)
 		private semestersRepository: Repository<Semester>,
 		@InjectRepository(Class)
-		private classesRepository: Repository<Class>
+		private classesRepository: Repository<Class>,
+		@InjectRepository(Question)
+		private questionsRepository: Repository<Question>
 	) {}
 
 	async create(createExamDto: CreateExamDto): Promise<Exam> {
@@ -39,8 +42,28 @@ export class ExamsService {
 			}
 		}
 
+		// Extract questions from payload
+		const questions = payload.questions || [];
+		delete payload.questions;
+
+		// Create exam
 		const exam = this.examsRepository.create(payload);
-		return this.examsRepository.save(exam) as any;
+		const savedExam = await this.examsRepository.save(exam);
+		const examId = (savedExam as any).id || savedExam[0]?.id;
+
+		// Create questions if provided
+		if (questions.length > 0) {
+			const questionEntities = questions.map((q: any) =>
+				this.questionsRepository.create({
+					...q,
+					examId: examId,
+				})
+			);
+			await this.questionsRepository.save(questionEntities);
+		}
+
+		// Reload exam with questions
+		return this.findOne(examId);
 	}
 	async findAll(status?: ExamStatus): Promise<Exam[]> {
 		const where = status ? { status } : {};
@@ -76,6 +99,35 @@ export class ExamsService {
 			.leftJoinAndSelect("exam.semester", "semester")
 			.orderBy("exam.startTime", "ASC")
 			.getMany();
+	}
+
+	async getSchedule(
+		startDate?: string,
+		endDate?: string,
+		semesterId?: number
+	): Promise<Exam[]> {
+		const query = this.examsRepository
+			.createQueryBuilder("exam")
+			.leftJoinAndSelect("exam.class", "class")
+			.leftJoinAndSelect("exam.semester", "semester")
+			.leftJoinAndSelect("exam.subject", "subject")
+			.orderBy("exam.startTime", "ASC");
+
+		if (startDate) {
+			query.andWhere("exam.startTime >= :startDate", { startDate });
+		}
+
+		if (endDate) {
+			query.andWhere("exam.endTime <= :endDate", { endDate });
+		}
+
+		if (semesterId) {
+			query.andWhere("exam.semesterId = :semesterId", {
+				semesterId: Number(semesterId),
+			});
+		}
+
+		return query.getMany();
 	}
 
 	async findByClass(classId: number): Promise<Exam[]> {

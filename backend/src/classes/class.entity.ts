@@ -13,6 +13,7 @@ import {
 import { User } from "../users/user.entity";
 import { Semester } from "../semesters/semester.entity";
 import { Student } from "../students/student.entity";
+import { Subject } from "../subjects/subject.entity";
 
 @Entity("classes")
 export class Class {
@@ -54,6 +55,14 @@ export class Class {
 		inverseJoinColumn: { name: "teacherId", referencedColumnName: "id" },
 	})
 	teachers: User[];
+
+	@ManyToMany(() => Subject, (subject) => subject.classes)
+	@JoinTable({
+		name: "class_subjects",
+		joinColumn: { name: "classId", referencedColumnName: "id" },
+		inverseJoinColumn: { name: "subjectId", referencedColumnName: "id" },
+	})
+	subjects: Subject[];
 
 	@CreateDateColumn()
 	createdAt: Date;

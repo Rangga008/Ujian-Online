@@ -79,6 +79,21 @@ export class ClassesController {
 		return this.classesService.assignTeachers(+id, teacherIds);
 	}
 
+	@Patch(":id/subjects")
+	@Roles(UserRole.ADMIN)
+	assignSubjects(
+		@Param("id") id: string,
+		@Body("subjectIds") subjectIds: number[]
+	) {
+		return this.classesService.assignSubjects(+id, subjectIds);
+	}
+
+	@Get("subject/:subjectId")
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
+	findBySubject(@Param("subjectId") subjectId: string) {
+		return this.classesService.findBySubject(+subjectId);
+	}
+
 	@Delete(":id")
 	@Roles(UserRole.ADMIN)
 	remove(@Param("id") id: string) {

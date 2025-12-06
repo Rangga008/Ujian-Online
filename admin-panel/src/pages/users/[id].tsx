@@ -553,7 +553,7 @@ export default function UserDetailPage() {
 									onClick={() => {
 										setShowEditClassModal(false);
 										setEditingStudent(null);
-										setSelectedClassId(null);
+										setSelectedClassId("");
 									}}
 									className="btn btn-secondary flex-1"
 								>

@@ -5,9 +5,34 @@ import {
 	IsEnum,
 	IsOptional,
 	IsBoolean,
+	IsArray,
+	ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
-import { ExamStatus } from "../exam.entity";
+import { ExamStatus, ExamTargetType } from "../exam.entity";
+import { QuestionType } from "../../questions/question.entity";
+
+export class CreateQuestionDto {
+	@IsString()
+	questionText: string;
+
+	@IsEnum(QuestionType)
+	type: QuestionType;
+
+	@IsOptional()
+	@IsArray()
+	options?: string[];
+
+	@IsString()
+	correctAnswer: string;
+
+	@IsNumber()
+	points: number;
+
+	@IsOptional()
+	@IsNumber()
+	orderIndex?: number;
+}
 
 export class CreateExamDto {
 	@IsString()
@@ -48,8 +73,26 @@ export class CreateExamDto {
 	classId?: number;
 
 	@IsOptional()
+	@IsEnum(ExamTargetType)
+	targetType?: ExamTargetType;
+
+	@IsOptional()
+	@IsString()
+	grade?: string;
+
+	@IsOptional()
 	@IsNumber()
 	semesterId?: number;
+
+	@IsOptional()
+	@IsNumber()
+	subjectId?: number;
+
+	@IsOptional()
+	@IsArray()
+	@ValidateNested({ each: true })
+	@Type(() => CreateQuestionDto)
+	questions?: CreateQuestionDto[];
 }
 
 export class UpdateExamDto {
@@ -96,6 +139,18 @@ export class UpdateExamDto {
 	classId?: number;
 
 	@IsOptional()
+	@IsEnum(ExamTargetType)
+	targetType?: ExamTargetType;
+
+	@IsOptional()
+	@IsString()
+	grade?: string;
+
+	@IsOptional()
 	@IsNumber()
 	semesterId?: number;
+
+	@IsOptional()
+	@IsNumber()
+	subjectId?: number;
 }

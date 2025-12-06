@@ -36,6 +36,9 @@ export class Subject {
 	@ManyToMany(() => User, (user) => user.subjects)
 	teachers: User[];
 
+	@ManyToMany("Class", "subjects")
+	classes: any[];
+
 	@CreateDateColumn()
 	createdAt: Date;
 

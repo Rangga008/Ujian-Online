@@ -3,8 +3,16 @@ import { useRouter } from "next/router";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
 import api from "@/lib/api";
+import subjectsApi from "@/lib/subjectsApi";
 import toast from "react-hot-toast";
 import Link from "next/link";
+
+interface Subject {
+	id: number;
+	name: string;
+	code: string;
+	color?: string;
+}
 
 interface ClassDetail {
 	id: number;
@@ -38,6 +46,7 @@ interface ClassDetail {
 		name: string;
 		email: string;
 	}>;
+	subjects?: Subject[];
 }
 
 interface AvailableStudent {
@@ -58,11 +67,14 @@ export default function ClassDetailPage() {
 
 	const [loading, setLoading] = useState(true);
 	const [classData, setClassData] = useState<ClassDetail | null>(null);
+	const [subjects, setSubjects] = useState<Subject[]>([]);
 	const [availableStudents, setAvailableStudents] = useState<
 		AvailableStudent[]
 	>([]);
 	const [showAddModal, setShowAddModal] = useState(false);
+	const [showSubjectsModal, setShowSubjectsModal] = useState(false);
 	const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+	const [selectedSubjectIds, setSelectedSubjectIds] = useState<number[]>([]);
 
 	useEffect(() => {
 		if (!id) return;
@@ -72,16 +84,19 @@ export default function ClassDetailPage() {
 	const fetchAll = async () => {
 		setLoading(true);
 		try {
-			const [classResponse, studentsResponse] = await Promise.all([
-				api.get(`/classes/${id}`),
-				api.get(`/students`, {
-					params: { semesterId: undefined }, // Will be filtered after we get class semester
-				}),
-			]);
+			const [classResponse, studentsResponse, subjectsResponse] =
+				await Promise.all([
+					api.get(`/classes/${id}`),
+					api.get(`/students`, {
+						params: { semesterId: undefined }, // Will be filtered after we get class semester
+					}),
+					subjectsApi.getAll(),
+				]);
 
 			const cls = classResponse.data;
 			console.log("Fetched class:", cls);
 			setClassData(cls);
+			setSubjects(subjectsResponse);
 
 			// Filter students by same semester and not in any class yet
 			// Note: Check if student has semester property and class relationship
@@ -157,6 +172,37 @@ export default function ClassDetailPage() {
 			prev.includes(studentId)
 				? prev.filter((id) => id !== studentId)
 				: [...prev, studentId]
+		);
+	};
+
+	const handleManageSubjects = () => {
+		setSelectedSubjectIds(classData?.subjects?.map((s) => s.id) || []);
+		setShowSubjectsModal(true);
+	};
+
+	const handleSaveSubjects = async () => {
+		if (!classData) return;
+
+		try {
+			await api.patch(`/classes/${classData.id}/subjects`, {
+				subjectIds: selectedSubjectIds,
+			});
+			toast.success("Mata pelajaran berhasil diperbarui");
+			setShowSubjectsModal(false);
+			await fetchAll();
+		} catch (error: any) {
+			console.error("Save subjects error:", error);
+			toast.error(
+				error.response?.data?.message || "Gagal menyimpan mata pelajaran"
+			);
+		}
+	};
+
+	const toggleSubject = (subjectId: number) => {
+		setSelectedSubjectIds((prev) =>
+			prev.includes(subjectId)
+				? prev.filter((id) => id !== subjectId)
+				: [...prev, subjectId]
 		);
 	};
 
@@ -236,6 +282,60 @@ export default function ClassDetailPage() {
 								</span>
 							</div>
 						</div>
+					</div>
+				</div>
+
+				{/* Subjects Section */}
+				<div className="card mb-6">
+					<div className="p-6">
+						<div className="flex items-center justify-between mb-4">
+							<h2 className="text-xl font-semibold">Mata Pelajaran</h2>
+							<button
+								onClick={handleManageSubjects}
+								className="btn btn-primary"
+							>
+								📚 Kelola Mata Pelajaran
+							</button>
+						</div>
+
+						{classData.subjects && classData.subjects.length > 0 ? (
+							<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+								{classData.subjects.map((subject) => (
+									<div
+										key={subject.id}
+										className="p-4 border rounded-lg hover:shadow-md transition-shadow"
+										style={{
+											backgroundColor: subject.color
+												? `${subject.color}15`
+												: "#f3f4f6",
+											borderColor: subject.color || "#e5e7eb",
+										}}
+									>
+										<div className="flex items-start justify-between">
+											<div className="flex-1">
+												<h3 className="font-semibold text-gray-900">
+													{subject.name}
+												</h3>
+												<p className="text-sm text-gray-600 mt-1">
+													Kode: {subject.code}
+												</p>
+											</div>
+											{subject.color && (
+												<div
+													className="w-4 h-4 rounded-full"
+													style={{ backgroundColor: subject.color }}
+												/>
+											)}
+										</div>
+									</div>
+								))}
+							</div>
+						) : (
+							<div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
+								Belum ada mata pelajaran. Klik tombol "Kelola Mata Pelajaran"
+								untuk menambahkan.
+							</div>
+						)}
 					</div>
 				</div>
 
@@ -422,6 +522,91 @@ export default function ClassDetailPage() {
 									onClick={() => {
 										setShowAddModal(false);
 										setSelectedStudentIds([]);
+									}}
+									className="btn btn-secondary flex-1"
+								>
+									Batal
+								</button>
+							</div>
+						</div>
+					</div>
+				)}
+
+				{/* Manage Subjects Modal */}
+				{showSubjectsModal && (
+					<div
+						className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+						onClick={() => setShowSubjectsModal(false)}
+					>
+						<div
+							className="bg-white rounded-lg p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+							onClick={(e) => e.stopPropagation()}
+						>
+							<h3 className="text-2xl font-bold mb-6">
+								Kelola Mata Pelajaran - {classData?.name}
+							</h3>
+
+							{subjects.length === 0 ? (
+								<div className="text-center py-8 text-gray-500">
+									Tidak ada mata pelajaran tersedia
+								</div>
+							) : (
+								<>
+									<div className="mb-4 text-sm text-gray-600">
+										Pilih mata pelajaran yang diajarkan di kelas ini:
+									</div>
+									<div className="max-h-96 overflow-y-auto border rounded-lg p-4 bg-gray-50">
+										<div className="space-y-3">
+											{subjects.map((subject) => (
+												<label
+													key={subject.id}
+													className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-3 rounded-lg transition"
+												>
+													<input
+														type="checkbox"
+														checked={selectedSubjectIds.includes(subject.id)}
+														onChange={() => toggleSubject(subject.id)}
+														className="w-5 h-5 text-blue-600"
+													/>
+													<div className="flex-1">
+														<div className="font-medium text-gray-900">
+															{subject.name}
+														</div>
+														<div className="text-sm text-gray-500">
+															Kode: {subject.code}
+														</div>
+													</div>
+													{subject.color && (
+														<div
+															className="w-6 h-6 rounded"
+															style={{ backgroundColor: subject.color }}
+														/>
+													)}
+												</label>
+											))}
+										</div>
+									</div>
+									<div className="mt-4 p-3 bg-blue-50 rounded-lg">
+										<p className="text-sm text-blue-800">
+											<strong>{selectedSubjectIds.length}</strong> mata
+											pelajaran dipilih
+										</p>
+									</div>
+								</>
+							)}
+
+							<div className="flex gap-3 pt-6">
+								<button
+									onClick={handleSaveSubjects}
+									className="btn btn-primary flex-1"
+									disabled={subjects.length === 0}
+								>
+									Simpan Mata Pelajaran
+								</button>
+								<button
+									onClick={() => {
+										setShowSubjectsModal(false);
+										setSelectedSubjectIds([]);
 									}}
 									className="btn btn-secondary flex-1"
 								>

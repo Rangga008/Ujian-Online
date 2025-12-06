@@ -7,6 +7,7 @@ import { CreateClassDto } from "./dto/create-class.dto";
 import { UpdateClassDto } from "./dto/update-class.dto";
 import { Semester } from "../semesters/semester.entity";
 import { Student } from "../students/student.entity";
+import { Subject } from "../subjects/subject.entity";
 
 @Injectable()
 export class ClassesService {
@@ -18,11 +19,13 @@ export class ClassesService {
 		@InjectRepository(Student)
 		private studentRepository: Repository<Student>,
 		@InjectRepository(Semester)
-		private semestersRepository: Repository<Semester>
+		private semestersRepository: Repository<Semester>,
+		@InjectRepository(Subject)
+		private subjectRepository: Repository<Subject>
 	) {}
 
 	async create(createClassDto: CreateClassDto): Promise<Class> {
-		const { teacherIds, ...classData } = createClassDto;
+		const { teacherIds, subjectIds, ...classData } = createClassDto;
 
 		// Auto assign active semester if exists and not provided explicitly
 		if (!("semesterId" in classData) || !classData["semesterId"]) {
@@ -51,6 +54,13 @@ export class ClassesService {
 			(classEntity as any).teachers = teachers;
 		}
 
+		if (subjectIds && subjectIds.length > 0) {
+			const subjects = await this.subjectRepository.find({
+				where: { id: In(subjectIds), isActive: true },
+			});
+			(classEntity as any).subjects = subjects;
+		}
+
 		return (await this.classRepository.save(classEntity)) as any;
 	}
 	async findAll(semesterId?: number): Promise<Class[]> {
@@ -60,7 +70,7 @@ export class ClassesService {
 		}
 		return await this.classRepository.find({
 			where,
-			relations: ["students", "teachers", "semester"],
+			relations: ["students", "teachers", "semester", "subjects"],
 			order: { grade: "ASC", name: "ASC" },
 		});
 	}
@@ -68,7 +78,7 @@ export class ClassesService {
 	async findOne(id: number): Promise<Class> {
 		const classEntity = await this.classRepository.findOne({
 			where: { id },
-			relations: ["students", "teachers", "semester"],
+			relations: ["students", "teachers", "semester", "subjects"],
 		});
 
 		if (!classEntity) {
@@ -81,7 +91,7 @@ export class ClassesService {
 	async findByGrade(grade: number): Promise<Class[]> {
 		return await this.classRepository.find({
 			where: { grade, isActive: true },
-			relations: ["students", "teachers", "semester"],
+			relations: ["students", "teachers", "semester", "subjects"],
 			order: { name: "ASC" },
 		});
 	}
@@ -92,15 +102,18 @@ export class ClassesService {
 			.leftJoinAndSelect("class.teachers", "teacher")
 			.leftJoinAndSelect("class.students", "student")
 			.leftJoinAndSelect("class.semester", "semester")
+			.leftJoinAndSelect("class.subjects", "subject")
 			.where("teacher.id = :teacherId", { teacherId })
 			.getMany();
 	}
 
 	async update(id: number, updateClassDto: UpdateClassDto): Promise<Class> {
 		const classEntity = await this.findOne(id);
-		const { teacherIds, ...classData } = updateClassDto as UpdateClassDto & {
-			teacherIds?: number[];
-		};
+		const { teacherIds, subjectIds, ...classData } =
+			updateClassDto as UpdateClassDto & {
+				teacherIds?: number[];
+				subjectIds?: number[];
+			};
 
 		Object.assign(classEntity, classData);
 
@@ -112,6 +125,17 @@ export class ClassesService {
 				classEntity.teachers = teachers;
 			} else {
 				classEntity.teachers = [];
+			}
+		}
+
+		if (subjectIds !== undefined) {
+			if (subjectIds.length > 0) {
+				const subjects = await this.subjectRepository.find({
+					where: { id: In(subjectIds), isActive: true },
+				});
+				classEntity.subjects = subjects;
+			} else {
+				classEntity.subjects = [];
 			}
 		}
 
@@ -153,8 +177,33 @@ export class ClassesService {
 		if (!activeSemester) return [];
 		return this.classRepository.find({
 			where: { semesterId: activeSemester.id },
-			relations: ["students", "teachers", "semester"],
+			relations: ["students", "teachers", "semester", "subjects"],
 			order: { grade: "ASC", name: "ASC" },
 		});
+	}
+
+	async assignSubjects(classId: number, subjectIds: number[]): Promise<Class> {
+		const classEntity = await this.findOne(classId);
+
+		const subjects = await this.subjectRepository.find({
+			where: { id: In(subjectIds), isActive: true },
+		});
+
+		classEntity.subjects = subjects;
+		return await this.classRepository.save(classEntity);
+	}
+
+	async findBySubject(subjectId: number): Promise<Class[]> {
+		return await this.classRepository
+			.createQueryBuilder("class")
+			.leftJoinAndSelect("class.subjects", "subject")
+			.leftJoinAndSelect("class.students", "student")
+			.leftJoinAndSelect("class.teachers", "teacher")
+			.leftJoinAndSelect("class.semester", "semester")
+			.where("subject.id = :subjectId", { subjectId })
+			.andWhere("class.isActive = :isActive", { isActive: true })
+			.orderBy("class.grade", "ASC")
+			.addOrderBy("class.name", "ASC")
+			.getMany();
 	}
 }
