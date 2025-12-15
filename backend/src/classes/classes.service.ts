@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+	Injectable,
+	NotFoundException,
+	ConflictException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In } from "typeorm";
 import { Class } from "./class.entity";
@@ -48,10 +52,31 @@ export class ClassesService {
 		const classEntity = this.classRepository.create(classData as any);
 
 		if (teacherIds && teacherIds.length > 0) {
-			const teachers = await this.userRepository.find({
-				where: { id: In(teacherIds), role: UserRole.TEACHER },
+			if (teacherIds.length > 1) {
+				throw new ConflictException(
+					"Satu guru hanya bisa menjadi wali untuk satu kelas"
+				);
+			}
+
+			const teacher = await this.userRepository.findOne({
+				where: { id: teacherIds[0], role: UserRole.TEACHER },
 			});
-			(classEntity as any).teachers = teachers;
+
+			if (!teacher) {
+				throw new NotFoundException("Guru tidak ditemukan");
+			}
+
+			const existingClass = await this.classRepository
+				.createQueryBuilder("class")
+				.leftJoin("class.teachers", "teacher")
+				.where("teacher.id = :teacherId", { teacherId: teacher.id })
+				.getOne();
+
+			if (existingClass) {
+				throw new ConflictException("Guru sudah menjadi wali di kelas lain");
+			}
+
+			(classEntity as any).teachers = [teacher];
 		}
 
 		if (subjectIds && subjectIds.length > 0) {
@@ -78,7 +103,13 @@ export class ClassesService {
 	async findOne(id: number): Promise<Class> {
 		const classEntity = await this.classRepository.findOne({
 			where: { id },
-			relations: ["students", "teachers", "semester", "subjects"],
+			relations: [
+				"students",
+				"students.user",
+				"teachers",
+				"semester",
+				"subjects",
+			],
 		});
 
 		if (!classEntity) {
@@ -118,13 +149,35 @@ export class ClassesService {
 		Object.assign(classEntity, classData);
 
 		if (teacherIds !== undefined) {
-			if (teacherIds.length > 0) {
-				const teachers = await this.userRepository.find({
-					where: { id: In(teacherIds), role: UserRole.TEACHER },
-				});
-				classEntity.teachers = teachers;
-			} else {
+			if (teacherIds.length > 1) {
+				throw new ConflictException(
+					"Satu guru hanya bisa menjadi wali untuk satu kelas"
+				);
+			}
+
+			if (teacherIds.length === 0) {
 				classEntity.teachers = [];
+			} else {
+				const teacher = await this.userRepository.findOne({
+					where: { id: teacherIds[0], role: UserRole.TEACHER },
+				});
+
+				if (!teacher) {
+					throw new NotFoundException("Guru tidak ditemukan");
+				}
+
+				const existingClass = await this.classRepository
+					.createQueryBuilder("class")
+					.leftJoin("class.teachers", "teacher")
+					.where("teacher.id = :teacherId", { teacherId: teacher.id })
+					.andWhere("class.id != :classId", { classId: id })
+					.getOne();
+
+				if (existingClass) {
+					throw new ConflictException("Guru sudah menjadi wali di kelas lain");
+				}
+
+				classEntity.teachers = [teacher];
 			}
 		}
 
@@ -157,11 +210,37 @@ export class ClassesService {
 	async assignTeachers(classId: number, teacherIds: number[]): Promise<Class> {
 		const classEntity = await this.findOne(classId);
 
-		const teachers = await this.userRepository.find({
-			where: { id: In(teacherIds), role: UserRole.TEACHER },
+		if (teacherIds.length > 1) {
+			throw new ConflictException(
+				"Satu guru hanya bisa menjadi wali untuk satu kelas"
+			);
+		}
+
+		if (teacherIds.length === 0) {
+			classEntity.teachers = [];
+			return await this.classRepository.save(classEntity);
+		}
+
+		const teacher = await this.userRepository.findOne({
+			where: { id: teacherIds[0], role: UserRole.TEACHER },
 		});
 
-		classEntity.teachers = teachers;
+		if (!teacher) {
+			throw new NotFoundException("Guru tidak ditemukan");
+		}
+
+		const existingClass = await this.classRepository
+			.createQueryBuilder("class")
+			.leftJoin("class.teachers", "teacher")
+			.where("teacher.id = :teacherId", { teacherId: teacher.id })
+			.andWhere("class.id != :classId", { classId })
+			.getOne();
+
+		if (existingClass) {
+			throw new ConflictException("Guru sudah menjadi wali di kelas lain");
+		}
+
+		classEntity.teachers = [teacher];
 		return await this.classRepository.save(classEntity);
 	}
 

@@ -13,6 +13,10 @@ export class CreateClassDto {
 	@IsNumber()
 	grade: number;
 
+	@IsNumber()
+	@IsOptional()
+	gradeId?: number;
+
 	@IsString()
 	@IsOptional()
 	major?: string;

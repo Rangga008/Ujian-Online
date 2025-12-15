@@ -1,16 +1,21 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
+import Head from "next/head";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
 import Pagination from "@/components/Pagination";
 import { classesApi } from "@/lib/classesApi";
 import { semestersApi } from "@/lib/semestersApi";
+import gradesApi, { Grade } from "@/lib/gradesApi";
 import { api } from "@/lib/api";
+import subjectsApi from "@/lib/subjectsApi";
+import { useAuthStore } from "@/store/authStore";
 
 interface Class {
 	id: number;
 	name: string;
 	grade: number;
+	gradeId?: number; // Added
 	major: string;
 	academicYear: string;
 	description?: string;
@@ -25,6 +30,7 @@ interface Class {
 	};
 	students?: any[];
 	teachers?: any[];
+	subjects?: any[];
 }
 
 interface Semester {
@@ -37,8 +43,11 @@ interface Semester {
 
 export default function ClassesPage() {
 	const router = useRouter();
+	const { user } = useAuthStore();
 	const [classes, setClasses] = useState<Class[]>([]);
 	const [semesters, setSemesters] = useState<Semester[]>([]);
+	const [grades, setGrades] = useState<Grade[]>([]);
+	const [subjects, setSubjects] = useState<any[]>([]);
 	const [activeSemester, setActiveSemester] = useState<Semester | null>(null);
 	const [selectedSemesterId, setSelectedSemesterId] = useState<number | "all">(
 		"all"
@@ -51,7 +60,8 @@ export default function ClassesPage() {
 	const [itemsPerPage, setItemsPerPage] = useState(10);
 	const [formData, setFormData] = useState({
 		name: "",
-		grade: 10,
+		gradeId: 0,
+		subjectIds: [] as number[],
 		major: "",
 		academicYear: "",
 		description: "",
@@ -59,6 +69,11 @@ export default function ClassesPage() {
 		isActive: true,
 		semesterId: 0,
 	});
+
+	// Searchable dropdown state for subjects
+	const [subjectQuery, setSubjectQuery] = useState<string>("");
+	const [subjectDropdownOpen, setSubjectDropdownOpen] =
+		useState<boolean>(false);
 
 	useEffect(() => {
 		fetchData();
@@ -80,7 +95,16 @@ export default function ClassesPage() {
 						params: { semesterId: selectedSemesterId },
 					});
 				}
-				setClasses(res.data);
+				// Filter for teachers
+				const filteredData =
+					user?.role === "teacher" &&
+					user?.teachingClasses &&
+					user.teachingClasses.length > 0
+						? res.data.filter((c: Class) =>
+								user.teachingClasses!.some((tc: any) => tc.id === c.id)
+						  )
+						: res.data;
+				setClasses(filteredData);
 			} catch (e) {
 				console.error("Error refetching classes:", e);
 			} finally {
@@ -96,13 +120,18 @@ export default function ClassesPage() {
 	const fetchData = async () => {
 		try {
 			setLoading(true);
-			const [semestersData, activeData] = await Promise.all([
-				semestersApi.getAll(),
-				semestersApi.getActive().catch(() => null),
-			]);
+			const [semestersData, activeData, gradesData, subjectsData] =
+				await Promise.all([
+					semestersApi.getAll(),
+					semestersApi.getActive().catch(() => null),
+					gradesApi.getAll(),
+					subjectsApi.getAll(),
+				]);
 
 			setSemesters(semestersData);
 			setActiveSemester(activeData);
+			setGrades(gradesData.sort((a, b) => a.level - b.level));
+			setSubjects(subjectsData || []);
 
 			// Set filter to active semester by default
 			const defaultSemesterId = activeData ? activeData.id : "all";
@@ -116,7 +145,16 @@ export default function ClassesPage() {
 			} else {
 				classesData = await classesApi.getAll();
 			}
-			setClasses(classesData);
+			// Filter for teachers - only show their assigned class
+			const filteredClasses =
+				user?.role === "teacher" &&
+				user?.teachingClasses &&
+				user.teachingClasses.length > 0
+					? classesData.filter((c: Class) =>
+							user.teachingClasses!.some((tc: any) => tc.id === c.id)
+					  )
+					: classesData;
+			setClasses(filteredClasses);
 		} catch (error) {
 			console.error("Error fetching data:", error);
 			alert("Gagal memuat data");
@@ -125,41 +163,73 @@ export default function ClassesPage() {
 		}
 	};
 
-	const toAcademicYearNumber = (v: string | number, fallback?: number) => {
-		if (typeof v === "number" && Number.isFinite(v)) return v;
-		const match = String(v).match(/\d{4}(?!.*\d{4})/); // pick last 4-digit year (e.g., 2025 from 2024/2025)
-		const n = match ? parseInt(match[0], 10) : NaN;
-		return Number.isFinite(n) ? n : fallback ?? new Date().getFullYear();
+	const toAcademicYearNumber = (year: string) => {
+		// Extract first year from "2024/2025" format
+		if (!year) return NaN;
+		const match = year.match(/^\d{4}/);
+		return match ? Number(match[0]) : NaN;
 	};
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 
-		if (!formData.semesterId || formData.semesterId === 0) {
-			alert("Silakan pilih semester terlebih dahulu");
+		const selectedGrade = grades.find((g) => g.id === formData.gradeId);
+		if (!selectedGrade) {
+			alert("Angkatan tidak valid");
 			return;
 		}
 
-		const selectedSemester = semesters.find(
-			(s) => s.id === formData.semesterId
-		);
-		if (!selectedSemester) {
-			alert("Semester tidak valid");
+		// When editing, use the existing semesterId if not changed
+		let semesterToUse = formData.semesterId;
+		if (!semesterToUse && editingClass) {
+			semesterToUse = editingClass.semesterId || 0;
+		}
+
+		// Determine academic year value
+		let academicYearValue: number;
+
+		// If editing and no semester ID, use the existing academicYear from the class
+		if (editingClass && (!semesterToUse || semesterToUse === 0)) {
+			if (typeof editingClass.academicYear === "number") {
+				academicYearValue = editingClass.academicYear;
+			} else {
+				academicYearValue = Number(editingClass.academicYear);
+			}
+		} else {
+			// For new class or when semester is selected, get it from semester
+			const selectedSemester =
+				semesters.find((s) => s.id === semesterToUse) || activeSemester;
+			if (!selectedSemester) {
+				alert("Semester tidak valid");
+				return;
+			}
+			academicYearValue = toAcademicYearNumber(selectedSemester.year);
+		}
+
+		// Validate academicYear is a valid number
+		if (isNaN(academicYearValue)) {
+			alert("Tahun akademik tidak valid");
 			return;
 		}
 
 		try {
 			const payload = {
 				name: formData.name,
-				grade: Number(formData.grade),
-				major: formData.major,
-				academicYear: toAcademicYearNumber(selectedSemester.year),
-				semesterId: formData.semesterId,
+				grade: selectedGrade.level,
+				gradeId: formData.gradeId,
+				major:
+					formData.subjectIds && formData.subjectIds.length > 0
+						? subjects
+								.filter((s) => formData.subjectIds.includes(s.id))
+								.map((s) => s.name)
+								.join(", ")
+						: formData.major,
+				academicYear: academicYearValue,
+				semesterId: semesterToUse || activeSemester?.id,
 				capacity: formData.capacity ? Number(formData.capacity) : undefined,
 				isActive: formData.isActive,
+				subjectIds: formData.subjectIds,
 			} as any;
-
-			console.log("Payload to send:", payload); // Debug log
 
 			if (editingClass) {
 				await api.patch(`/classes/${editingClass.id}`, payload);
@@ -177,10 +247,13 @@ export default function ClassesPage() {
 	};
 
 	const handleEdit = (cls: Class) => {
+		console.log("Editing class:", cls); // DEBUG
+		console.log("Setting gradeId to:", cls.gradeId); // DEBUG
 		setEditingClass(cls);
 		setFormData({
 			name: cls.name,
-			grade: cls.grade,
+			gradeId: cls.gradeId || 0,
+			subjectIds: (cls.subjects || []).map((s: any) => s.id),
 			major: cls.major,
 			academicYear: cls.academicYear,
 			description: cls.description || "",
@@ -207,7 +280,8 @@ export default function ClassesPage() {
 		setEditingClass(null);
 		setFormData({
 			name: "",
-			grade: 10,
+			gradeId: 0,
+			subjectIds: [],
 			major: "",
 			academicYear: "",
 			description: "",
@@ -253,15 +327,18 @@ export default function ClassesPage() {
 	};
 
 	return (
-		<Layout>
-			<div className="space-y-6">
+		<Layout title="Kelola Kelas">
+			<Head>
+				<title>Kelola Kelas - Admin Panel</title>
+			</Head>
+			<div className="space-y-6 px-2 sm:px-0">
 				<div className="mb-2">
 					<ActiveSemesterBanner />
 				</div>
 				{/* Header */}
-				<div className="flex items-center justify-between">
+				<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 					<div>
-						<h1 className="text-3xl font-bold text-gray-900">
+						<h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
 							Manajemen Kelas
 						</h1>
 						<p className="text-gray-600 mt-1">
@@ -354,7 +431,6 @@ export default function ClassesPage() {
 									<tr>
 										<th>Nama Kelas</th>
 										<th>Tingkat</th>
-										<th>Jurusan</th>
 										<th>Tahun Ajaran</th>
 										<th>Semester</th>
 										<th>Kapasitas</th>
@@ -368,7 +444,7 @@ export default function ClassesPage() {
 										<tr key={cls.id}>
 											<td className="font-medium">{cls.name}</td>
 											<td>Kelas {cls.grade}</td>
-											<td>{cls.major}</td>
+											{/* subjects column removed to avoid visual clutter */}
 											<td>{cls.academicYear}</td>
 											<td>
 												{cls.semester ? (
@@ -464,35 +540,116 @@ export default function ClassesPage() {
 										/>
 									</div>
 									<div className="form-group">
-										<label className="form-label">Tingkat *</label>
+										<label className="form-label">Angkatan (Tingkat) *</label>
 										<select
 											className="form-input"
-											value={formData.grade}
+											value={formData.gradeId}
 											onChange={(e) =>
 												setFormData({
 													...formData,
-													grade: parseInt(e.target.value),
+													gradeId: parseInt(e.target.value),
 												})
 											}
 											required
 										>
-											<option value={10}>Kelas 10</option>
-											<option value={11}>Kelas 11</option>
-											<option value={12}>Kelas 12</option>
+											<option value={0}>Pilih Angkatan</option>
+											{grades
+												.filter((g) => g.section === "SMA" && g.isActive)
+												.map((grade) => (
+													<option key={grade.id} value={grade.id}>
+														{grade.name} (Kelas {grade.level})
+													</option>
+												))}
 										</select>
+										<p className="text-xs text-gray-500 mt-1">
+											Pilih angkatan dari data yang sudah dikelola di Pengaturan
+										</p>
 									</div>
 									<div className="form-group">
-										<label className="form-label">Jurusan *</label>
-										<input
-											type="text"
-											className="form-input"
-											value={formData.major}
-											onChange={(e) =>
-												setFormData({ ...formData, major: e.target.value })
-											}
-											placeholder="Contoh: IPA, IPS"
-											required
-										/>
+										<label className="form-label">Mata Pelajaran *</label>
+										<div className="relative">
+											<input
+												type="text"
+												className="form-input"
+												placeholder="Cari dan pilih mata pelajaran..."
+												value={subjectQuery}
+												onChange={(e) => {
+													setSubjectQuery(e.target.value);
+													setSubjectDropdownOpen(true);
+												}}
+												onFocus={() => setSubjectDropdownOpen(true)}
+												onBlur={() =>
+													setTimeout(() => setSubjectDropdownOpen(false), 150)
+												}
+											/>
+
+											<div className="mt-2 text-xs text-gray-500">
+												Pilih satu atau lebih mata pelajaran
+											</div>
+
+											{subjectDropdownOpen && (
+												<div className="absolute z-50 w-full bg-white border rounded max-h-48 overflow-auto mt-1 shadow">
+													{subjects.filter((s) =>
+														s.name
+															.toString()
+															.toLowerCase()
+															.includes(subjectQuery.toLowerCase())
+													).length === 0 ? (
+														<div className="p-2 text-sm text-gray-500">
+															Tidak ditemukan
+														</div>
+													) : (
+														subjects
+															.filter((s) =>
+																s.name
+																	.toString()
+																	.toLowerCase()
+																	.includes(subjectQuery.toLowerCase())
+															)
+															.map((sub) => (
+																<label
+																	key={sub.id}
+																	className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded"
+																>
+																	<input
+																		type="checkbox"
+																		checked={formData.subjectIds.includes(
+																			sub.id
+																		)}
+																		onChange={() => {
+																			const ids = formData.subjectIds || [];
+																			if (ids.includes(sub.id)) {
+																				setFormData({
+																					...formData,
+																					subjectIds: ids.filter(
+																						(i) => i !== sub.id
+																					),
+																				});
+																			} else {
+																				setFormData({
+																					...formData,
+																					subjectIds: [...ids, sub.id],
+																				});
+																			}
+																		}}
+																	/>
+																	<span className="truncate">{sub.name}</span>
+																</label>
+															))
+													)}
+												</div>
+											)}
+
+											{/* Display selected summary */}
+											<div className="mt-2 text-sm text-gray-700">
+												{formData.subjectIds && formData.subjectIds.length > 0
+													? subjects
+															.filter((s) => formData.subjectIds.includes(s.id))
+															.map((s) => s.name)
+															.join(", ")
+													: "Belum ada mata pelajaran dipilih"}
+											</div>
+										</div>
 									</div>
 									<div className="form-group">
 										<label className="form-label">Semester *</label>

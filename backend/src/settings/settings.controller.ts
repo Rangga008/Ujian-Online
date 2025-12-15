@@ -133,8 +133,10 @@ export class SettingsController {
 		})
 	)
 	async uploadFavicon(@UploadedFile() file: Express.Multer.File) {
+		if (!file) {
+			return { path: null, error: "No file uploaded" };
+		}
 		const urlPath = `/uploads/${file.filename}`;
-		await this.settingsService.updateByKey("app.favicon", urlPath, "image");
 		return { path: urlPath };
 	}
 
@@ -161,18 +163,98 @@ export class SettingsController {
 		})
 	)
 	async uploadLogo(@UploadedFile() file: Express.Multer.File) {
+		if (!file) {
+			return { path: null, error: "No file uploaded" };
+		}
 		const urlPath = `/uploads/${file.filename}`;
-		await this.settingsService.updateByKey("app.logo", urlPath, "image");
+		return { path: urlPath };
+	}
 
-		// Auto-generate dark mode logo with -dark suffix (bypass lock)
-		const darkLogoPath = urlPath.replace(/(\.[^.]+)$/, "-dark$1");
-		await this.settingsService.updateByKey(
-			"app.logo_dark",
-			darkLogoPath,
-			"image",
-			true // bypass lock
+	// General upload endpoint (for questions, etc) - with image compression
+	@Post("upload")
+	@UseGuards(JwtAuthGuard, RolesGuard)
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
+	@UseInterceptors(
+		FileInterceptor("file", {
+			storage: diskStorage({
+				destination: "public/uploads",
+				filename: (req, file, cb) => {
+					const uniqueSuffix = Date.now();
+					cb(null, `file-${uniqueSuffix}${extname(file.originalname)}`);
+				},
+			}),
+			fileFilter: (req, file, cb) => {
+				const allowed = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
+				const isValid = allowed.includes(
+					extname(file.originalname).toLowerCase()
+				);
+				cb(isValid ? null : new Error("Invalid file type"), isValid);
+			},
+		})
+	)
+	async uploadFile(@UploadedFile() file: Express.Multer.File) {
+		if (!file) {
+			return { path: null, error: "No file uploaded" };
+		}
+
+		// Compress image if it's an image file
+		const imageExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+		const isImage = imageExtensions.includes(
+			extname(file.originalname).toLowerCase()
 		);
 
-		return { path: urlPath, darkPath: darkLogoPath };
+		if (isImage) {
+			try {
+				const sharp = require("sharp");
+				const fs = require("fs").promises;
+				const path = require("path");
+
+				const filePath = path.join("public/uploads", file.filename);
+
+				// Read original size
+				const originalSize = (await fs.stat(filePath)).size;
+
+				// Compress based on format
+				let compression = sharp(filePath);
+
+				const ext = extname(file.originalname).toLowerCase();
+				if (ext === ".png") {
+					compression = compression.png({ quality: 80, progressive: true });
+				} else if (ext === ".webp") {
+					compression = compression.webp({ quality: 75 });
+				} else {
+					// jpg/jpeg
+					compression = compression.jpeg({ quality: 75, progressive: true });
+				}
+
+				// Resize if image is too large (max 1920px width)
+				compression = compression.resize(1920, 1440, {
+					fit: "inside",
+					withoutEnlargement: true,
+				});
+
+			const tempPath = `${filePath}.tmp`;
+			await compression.toFile(tempPath);
+			await fs.rename(tempPath, filePath);
+				await compression.toFile(tempPath);
+				await fs.rename(tempPath, filePath);
+
+				const compressedSize = (await fs.stat(filePath)).size;
+				const reduction = (
+					((originalSize - compressedSize) / originalSize) *
+					100
+				).toFixed(1);
+
+				console.log(
+					`Image compressed: ${(originalSize / 1024).toFixed(1)}KB → ${(compressedSize / 1024).toFixed(1)}KB (${reduction}% reduction)`
+				);
+			} catch (error) {
+				console.error("Image compression failed:", error);
+				// Continue anyway, serve original
+			}
+		}
+
+		const urlPath = `/uploads/${file.filename}`;
+		return { path: urlPath };
 	}
 }

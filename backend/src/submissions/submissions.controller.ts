@@ -13,6 +13,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/decorators/roles.decorator";
 import { UserRole } from "../users/user.entity";
+import { Query, Header } from "@nestjs/common";
 
 @Controller("submissions")
 @UseGuards(JwtAuthGuard)
@@ -66,5 +67,30 @@ export class SubmissionsController {
 	@Get(":id")
 	findOne(@Param("id") id: string) {
 		return this.submissionsService.findOne(+id);
+	}
+
+	@Post(":id/grade")
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
+	@UseGuards(RolesGuard)
+	async gradeSubmission(@Param("id") id: string, @Body() body: any) {
+		return this.submissionsService.gradeSubmission(+id, body);
+	}
+
+	@Get("export")
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
+	@UseGuards(RolesGuard)
+	@Header("Content-Type", "text/csv")
+	async exportSubmissions(
+		@Query("semesterId") semesterId?: string,
+		@Query("classId") classId?: string,
+		@Query("examId") examId?: string,
+		@Query("studentId") studentId?: string
+	) {
+		return this.submissionsService.exportCsv({
+			semesterId: semesterId ? Number(semesterId) : undefined,
+			classId: classId ? Number(classId) : undefined,
+			examId: examId ? Number(examId) : undefined,
+			studentId: studentId ? Number(studentId) : undefined,
+		});
 	}
 }

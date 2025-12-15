@@ -76,6 +76,8 @@ export class UsersController {
 	}
 
 	@Get(":id")
+	@UseGuards(RolesGuard)
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
 	findOne(@Param("id") id: string) {
 		return this.usersService.findOne(+id);
 	}
@@ -90,5 +92,36 @@ export class UsersController {
 	@Roles(UserRole.ADMIN)
 	remove(@Param("id") id: string) {
 		return this.usersService.remove(+id);
+	}
+
+	@Post(":id/assign-classes")
+	@Roles(UserRole.ADMIN)
+	assignTeacherToClasses(
+		@Param("id") id: string,
+		@Body() dto: { classIds: number[]; semesterId?: number }
+	) {
+		return this.usersService.assignTeacherToClass(
+			+id,
+			dto.classIds,
+			dto.semesterId
+		);
+	}
+
+	@Get(":id/teaching-classes")
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
+	getTeacherClasses(
+		@Param("id") id: string,
+		@Query("semesterId") semesterId?: string
+	) {
+		return this.usersService.getTeacherWithClasses(
+			+id,
+			semesterId ? Number(semesterId) : undefined
+		);
+	}
+
+	@Get(":id/activities")
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
+	getUserActivities(@Param("id") id: string) {
+		return this.usersService.getUserActivities(+id);
 	}
 }

@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
+import Head from "next/head";
 import Layout from "@/components/Layout";
+import { useRouter } from "next/router";
+import { useAuthStore } from "@/store/authStore";
+import { isPageAccessible } from "@/lib/authGuard";
 import { semestersApi } from "@/lib/semestersApi";
 import { api } from "@/lib/api";
 
@@ -18,6 +22,15 @@ interface Semester {
 }
 
 export default function SemestersPage() {
+	const router = useRouter();
+	const { user } = useAuthStore();
+
+	useEffect(() => {
+		if (user && !isPageAccessible("/semesters", user.role)) {
+			router.push("/dashboard");
+		}
+	}, [user, router]);
+
 	const [semesters, setSemesters] = useState<Semester[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [showModal, setShowModal] = useState(false);
@@ -153,12 +166,15 @@ export default function SemestersPage() {
 	const activeSemester = semesters.find((s) => s.isActive);
 
 	return (
-		<Layout>
-			<div className="space-y-6">
+		<Layout title="Tahun Ajaran">
+			<Head>
+				<title>Tahun Ajaran & Semester - Admin Panel</title>
+			</Head>
+			<div className="space-y-6 px-2 sm:px-0">
 				{/* Header */}
-				<div className="flex items-center justify-between">
+				<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 					<div>
-						<h1 className="text-3xl font-bold text-gray-900">
+						<h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
 							Tahun Ajaran & Semester
 						</h1>
 						<p className="text-gray-600 mt-1">

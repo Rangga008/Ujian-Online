@@ -27,13 +27,22 @@ export class SubmissionsService {
 	) {}
 
 	async startExam(studentId: number, examId: number): Promise<Submission> {
-		// Check if already has submission
-		const existing = await this.submissionsRepository.findOne({
+		// If there's an in-progress submission, resume it
+		const existingInProgress = await this.submissionsRepository.findOne({
 			where: { studentId, examId, status: SubmissionStatus.IN_PROGRESS },
 		});
 
-		if (existing) {
-			return existing;
+		if (existingInProgress) {
+			return existingInProgress;
+		}
+
+		// If there's already a submitted submission, do not allow starting again
+		const existingSubmitted = await this.submissionsRepository.findOne({
+			where: { studentId, examId, status: SubmissionStatus.SUBMITTED },
+		});
+
+		if (existingSubmitted) {
+			throw new BadRequestException("You have already submitted this exam");
 		}
 
 		const submission = this.submissionsRepository.create({
@@ -157,6 +166,116 @@ export class SubmissionsService {
 		}
 
 		return submission;
+	}
+
+	async gradeSubmission(
+		id: number,
+		payload: { answers?: { id: number; points: number }[]; score?: number }
+	) {
+		const submission = await this.submissionsRepository.findOne({
+			where: { id },
+			relations: ["answers"],
+		});
+
+		if (!submission) {
+			throw new NotFoundException("Submission not found");
+		}
+
+		// Update individual answer points if provided
+		if (payload.answers && payload.answers.length > 0) {
+			for (const a of payload.answers) {
+				const ans = submission.answers.find((x) => x.id === a.id);
+				if (!ans) continue;
+				ans.points = a.points;
+				ans.isCorrect = a.points > 0;
+				await this.answersRepository.save(ans);
+			}
+		}
+
+		// Recalculate total score unless explicitly provided
+		let total = submission.answers.reduce((s, x) => s + (x.points || 0), 0);
+		if (typeof payload.score === "number") {
+			submission.score = payload.score;
+		} else {
+			submission.score = total;
+		}
+
+		// Ensure submission marked as submitted
+		submission.status = submission.status || submission.status;
+		submission.totalAnswered = submission.answers.length;
+
+		return this.submissionsRepository.save(submission);
+	}
+
+	async exportCsv(filters: {
+		semesterId?: number;
+		classId?: number;
+		examId?: number;
+		studentId?: number;
+	}) {
+		const qb = this.submissionsRepository
+			.createQueryBuilder("s")
+			.leftJoinAndSelect("s.student", "student")
+			.leftJoinAndSelect("student.user", "user")
+			.leftJoinAndSelect("s.exam", "exam");
+
+		if (filters.semesterId) {
+			qb.andWhere("student.semesterId = :semesterId", {
+				semesterId: filters.semesterId,
+			});
+		}
+
+		if (filters.classId) {
+			qb.andWhere("student.classId = :classId", { classId: filters.classId });
+		}
+
+		if (filters.examId) {
+			qb.andWhere("s.examId = :examId", { examId: filters.examId });
+		}
+
+		if (filters.studentId) {
+			qb.andWhere("student.id = :studentId", { studentId: filters.studentId });
+		}
+
+		qb.orderBy("s.submittedAt", "DESC");
+
+		const rows = await qb.getMany();
+
+		// Build CSV
+		const header = [
+			"Submission ID",
+			"Exam ID",
+			"Exam Title",
+			"Student ID",
+			"Student Name",
+			"NIS",
+			"Class ID",
+			"Status",
+			"Score",
+			"Total Answered",
+			"Submitted At",
+		];
+
+		const lines = [header.join(",")];
+
+		for (const s of rows) {
+			const line = [
+				s.id,
+				s.examId,
+				`"${(s.exam && s.exam.title) || ""}"`,
+				s.studentId,
+				`"${(s.student && s.student.name) || ""}"`,
+				`"${(s.student && s.student.user && s.student.user.nis) || ""}"`,
+				(s.student && s.student.classId) || "",
+				s.status,
+				s.score ?? "",
+				s.totalAnswered ?? "",
+				s.submittedAt ? s.submittedAt.toISOString() : "",
+			];
+			lines.push(line.join(","));
+		}
+
+		return lines.join("\n");
 	}
 
 	// Helper method to get student ID from user ID and active semester

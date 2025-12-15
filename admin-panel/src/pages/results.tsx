@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Head from "next/head";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
 import api from "@/lib/api";
@@ -82,7 +83,7 @@ export default function ResultsPage() {
 
 	if (loading) {
 		return (
-			<Layout>
+			<Layout title="Hasil Ujian">
 				<div className="flex items-center justify-center h-64">
 					<div className="text-xl">Loading...</div>
 				</div>
@@ -91,15 +92,20 @@ export default function ResultsPage() {
 	}
 
 	return (
-		<Layout>
-			<div>
+		<Layout title="Hasil Ujian">
+			<Head>
+				<title>Hasil Ujian - Admin Panel</title>
+			</Head>
+			<div className="px-2 sm:px-0">
 				<div className="mb-4">
 					<ActiveSemesterBanner />
 				</div>
-				<h1 className="text-3xl font-bold text-gray-900 mb-8">Hasil Ujian</h1>
+				<h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 sm:mb-8">
+					Hasil Ujian
+				</h1>
 
 				{/* Filters: Semester, Class, Exam */}
-				<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
 					<div className="card">
 						<label className="block text-sm font-medium mb-2">Semester</label>
 						<select

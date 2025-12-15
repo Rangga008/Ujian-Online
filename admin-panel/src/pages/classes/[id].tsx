@@ -6,6 +6,7 @@ import api from "@/lib/api";
 import subjectsApi from "@/lib/subjectsApi";
 import toast from "react-hot-toast";
 import Link from "next/link";
+import { useAuthStore } from "@/store/authStore";
 
 interface Subject {
 	id: number;
@@ -64,9 +65,13 @@ interface AvailableStudent {
 export default function ClassDetailPage() {
 	const router = useRouter();
 	const { id } = router.query;
+	const { user } = useAuthStore();
 
 	const [loading, setLoading] = useState(true);
 	const [classData, setClassData] = useState<ClassDetail | null>(null);
+	const [enrolledStudents, setEnrolledStudents] = useState<AvailableStudent[]>(
+		[]
+	);
 	const [subjects, setSubjects] = useState<Subject[]>([]);
 	const [availableStudents, setAvailableStudents] = useState<
 		AvailableStudent[]
@@ -75,6 +80,8 @@ export default function ClassDetailPage() {
 	const [showSubjectsModal, setShowSubjectsModal] = useState(false);
 	const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
 	const [selectedSubjectIds, setSelectedSubjectIds] = useState<number[]>([]);
+	const [searchAvailable, setSearchAvailable] = useState("");
+	const [searchEnrolled, setSearchEnrolled] = useState("");
 
 	useEffect(() => {
 		if (!id) return;
@@ -98,14 +105,17 @@ export default function ClassDetailPage() {
 			setClassData(cls);
 			setSubjects(subjectsResponse);
 
-			// Filter students by same semester and not in any class yet
-			// Note: Check if student has semester property and class relationship
+			// Re-fetch enrolled students from students endpoint to ensure user relation is present
+			const enrolledResponse = await api.get(`/students`, {
+				params: { classId: cls.id },
+			});
+			setEnrolledStudents(enrolledResponse.data || cls.students || []);
+
 			const allStudents = studentsResponse.data;
 			console.log("All students:", allStudents);
+
 			const filtered = allStudents.filter((s: any) => {
-				// Check if student is in the same semester as the class
 				const inSameSemester = s.semester?.id === cls.semesterId;
-				// Check if student is not already in a class
 				const notInClass = !s.class || s.class === null;
 				return inSameSemester && notInClass;
 			});
@@ -175,6 +185,24 @@ export default function ClassDetailPage() {
 		);
 	};
 
+	const filterByKeyword = <T extends { user?: any; name?: string }>(
+		items: T[],
+		keyword: string
+	) => {
+		if (!keyword.trim()) return items;
+		const q = keyword.toLowerCase();
+		return items.filter((item) => {
+			const name = item.user?.name || item.name || "";
+			const email = item.user?.email || "";
+			const nis = item.user?.nis || "";
+			return (
+				name.toLowerCase().includes(q) ||
+				email.toLowerCase().includes(q) ||
+				nis.toLowerCase().includes(q)
+			);
+		});
+	};
+
 	const handleManageSubjects = () => {
 		setSelectedSubjectIds(classData?.subjects?.map((s) => s.id) || []);
 		setShowSubjectsModal(true);
@@ -230,7 +258,6 @@ export default function ClassDetailPage() {
 				<div className="mb-4">
 					<ActiveSemesterBanner />
 				</div>
-
 				<div className="flex items-center justify-between mb-6">
 					<div>
 						<h1 className="text-3xl font-bold text-gray-900">
@@ -247,7 +274,6 @@ export default function ClassDetailPage() {
 						Kembali
 					</button>
 				</div>
-
 				{/* Class Info Card */}
 				<div className="card mb-6">
 					<div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -284,7 +310,31 @@ export default function ClassDetailPage() {
 						</div>
 					</div>
 				</div>
-
+				{/* Wali Kelas */}
+				<div className="card mb-6">
+					<div className="p-6 flex items-center justify-between">
+						<div>
+							<h2 className="text-xl font-semibold mb-2">Wali Kelas</h2>
+							{classData.teachers && classData.teachers.length > 0 ? (
+								<div className="space-y-1">
+									<div className="text-lg font-medium">
+										{classData.teachers[0].name}
+									</div>
+									<div className="text-sm text-gray-600">
+										{classData.teachers[0].email}
+									</div>
+								</div>
+							) : (
+								<div className="text-gray-600">Belum ada wali kelas</div>
+							)}
+						</div>
+						{user?.role === "admin" && (
+							<Link href="/teachers" className="btn btn-primary">
+								Kelola Guru
+							</Link>
+						)}
+					</div>
+				</div>{" "}
 				{/* Subjects Section */}
 				<div className="card mb-6">
 					<div className="p-6">
@@ -338,27 +388,36 @@ export default function ClassDetailPage() {
 						)}
 					</div>
 				</div>
-
 				{/* Students Section */}
 				<div className="card">
 					<div className="p-6">
-						<div className="flex items-center justify-between mb-4">
+						<div className="flex items-center justify-between gap-4 flex-wrap mb-4">
 							<h2 className="text-xl font-semibold">
-								Daftar Siswa ({classData.students?.length || 0})
+								Daftar Siswa ({enrolledStudents.length})
 							</h2>
-							<button
-								onClick={() => setShowAddModal(true)}
-								className="btn btn-primary"
-								disabled={
-									(classData.students?.length || 0) >= classData.capacity
-								}
-							>
-								+ Tambah Siswa
-							</button>
+							<div className="flex items-center gap-3 flex-wrap">
+								<input
+									type="text"
+									value={searchEnrolled}
+									onChange={(e) => setSearchEnrolled(e.target.value)}
+									placeholder="Cari NIS/Nama/Email"
+									className="input w-64"
+								/>
+								<button
+									onClick={() => setShowAddModal(true)}
+									className="btn btn-primary"
+									disabled={
+										(classData.capacity ?? 0) > 0 &&
+										enrolledStudents.length >= (classData.capacity || 0)
+									}
+								>
+									+ Tambah Siswa
+								</button>
+							</div>
 						</div>
 
 						{classData.capacity &&
-							(classData.students?.length || 0) >= classData.capacity && (
+							enrolledStudents.length >= classData.capacity && (
 								<div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
 									⚠️ Kelas sudah penuh. Kapasitas maksimal tercapai.
 								</div>
@@ -375,35 +434,37 @@ export default function ClassDetailPage() {
 									</tr>
 								</thead>
 								<tbody>
-									{classData.students && classData.students.length > 0 ? (
-										classData.students.map((student) => (
-											<tr
-												key={student.id}
-												className="border-b hover:bg-gray-50"
-											>
-												<td className="p-4">{student.user?.nis || "-"}</td>
-												<td className="p-4 font-medium">
-													{student.user?.name || student.name}
-												</td>
-												<td className="p-4">{student.user?.email || "-"}</td>
-												<td className="p-4">
-													<div className="flex gap-2">
-														<Link
-															href={`/users/${student.userId}`}
-															className="text-blue-600 hover:text-blue-700"
-														>
-															Detail
-														</Link>
-														<button
-															onClick={() => handleRemoveStudent(student.id)}
-															className="text-red-600 hover:text-red-700"
-														>
-															Keluarkan
-														</button>
-													</div>
-												</td>
-											</tr>
-										))
+									{enrolledStudents.length > 0 ? (
+										filterByKeyword(enrolledStudents, searchEnrolled).map(
+											(student) => (
+												<tr
+													key={student.id}
+													className="border-b hover:bg-gray-50"
+												>
+													<td className="p-4">{student.user?.nis || "-"}</td>
+													<td className="p-4 font-medium">
+														{student.user?.name || student.name}
+													</td>
+													<td className="p-4">{student.user?.email || "-"}</td>
+													<td className="p-4">
+														<div className="flex gap-2">
+															<Link
+																href={`/users/${student.userId}`}
+																className="text-blue-600 hover:text-blue-700"
+															>
+																Detail
+															</Link>
+															<button
+																onClick={() => handleRemoveStudent(student.id)}
+																className="text-red-600 hover:text-red-700"
+															>
+																Keluarkan
+															</button>
+														</div>
+													</td>
+												</tr>
+											)
+										)
 									) : (
 										<tr>
 											<td className="p-4 text-center text-gray-500" colSpan={4}>
@@ -416,7 +477,6 @@ export default function ClassDetailPage() {
 						</div>
 					</div>
 				</div>
-
 				{/* Add Students Modal */}
 				{showAddModal && (
 					<div
@@ -430,6 +490,22 @@ export default function ClassDetailPage() {
 							<h3 className="text-2xl font-bold mb-6">
 								Tambah Siswa ke Kelas {classData.name}
 							</h3>
+
+							<div className="flex items-center gap-3 mb-4">
+								<input
+									type="text"
+									value={searchAvailable}
+									onChange={(e) => setSearchAvailable(e.target.value)}
+									placeholder="Cari NIS/Nama/Email"
+									className="input w-full"
+								/>
+								<button
+									onClick={() => setSearchAvailable("")}
+									className="btn btn-secondary"
+								>
+									Reset
+								</button>
+							</div>
 
 							{availableStudents.length === 0 ? (
 								<div className="text-center py-8 text-gray-500">
@@ -475,7 +551,10 @@ export default function ClassDetailPage() {
 												</tr>
 											</thead>
 											<tbody>
-												{availableStudents.map((student) => (
+												{filterByKeyword(
+													availableStudents,
+													searchAvailable
+												).map((student) => (
 													<tr
 														key={student.id}
 														className="border-b hover:bg-gray-50"
@@ -504,8 +583,16 @@ export default function ClassDetailPage() {
 											</tbody>
 										</table>
 									</div>
-									<div className="mt-4 text-sm text-gray-600">
-										{selectedStudentIds.length} siswa dipilih
+									<div className="mt-4 text-sm text-gray-600 flex justify-between flex-wrap gap-2">
+										<span>{selectedStudentIds.length} siswa dipilih</span>
+										<span>
+											Tampil:{" "}
+											{
+												filterByKeyword(availableStudents, searchAvailable)
+													.length
+											}{" "}
+											/ {availableStudents.length}
+										</span>
 									</div>
 								</>
 							)}
@@ -531,7 +618,6 @@ export default function ClassDetailPage() {
 						</div>
 					</div>
 				)}
-
 				{/* Manage Subjects Modal */}
 				{showSubjectsModal && (
 					<div

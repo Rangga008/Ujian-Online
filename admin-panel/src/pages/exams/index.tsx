@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Head from "next/head";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
 import api from "@/lib/api";
@@ -7,8 +8,10 @@ import toast from "react-hot-toast";
 import { format } from "date-fns";
 import semestersApi, { Semester } from "@/lib/semestersApi";
 import classesApi, { Class } from "@/lib/classesApi";
+import { useAuthStore } from "@/store/authStore";
 
 export default function ExamsPage() {
+	const { user } = useAuthStore();
 	const [exams, setExams] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [activeSemester, setActiveSemester] = useState<Semester | null>(null);
@@ -18,6 +21,7 @@ export default function ExamsPage() {
 	);
 	const [classes, setClasses] = useState<Class[]>([]);
 	const [selectedClass, setSelectedClass] = useState<string>("all");
+	const [selectedGrade, setSelectedGrade] = useState<string>("all");
 
 	useEffect(() => {
 		fetchInitialData();
@@ -33,7 +37,16 @@ export default function ExamsPage() {
 			setSemesters(allSemesters);
 			setSelectedSemesterId(active ? active.id : "all");
 			const classesData = await classesApi.getAll();
-			setClasses(classesData);
+			// Filter classes if user is teacher - only show their assigned class
+			const filteredClasses =
+				user?.role === "teacher" &&
+				user?.teachingClasses &&
+				user.teachingClasses.length > 0
+					? classesData.filter((c) =>
+							user.teachingClasses!.some((tc: any) => tc.id === c.id)
+					  )
+					: classesData;
+			setClasses(filteredClasses);
 			await fetchExams();
 		} catch (error) {
 			toast.error("Gagal memuat data");
@@ -60,10 +73,18 @@ export default function ExamsPage() {
 			? exams
 			: exams.filter((e) => e.classId === parseInt(selectedClass));
 
+	const filteredByGrade =
+		selectedGrade === "all"
+			? filteredByClass
+			: filteredByClass.filter((e) => {
+					const examClass = classes.find((c) => c.id === e.classId);
+					return examClass?.grade === parseInt(selectedGrade);
+			  });
+
 	const filteredExams =
 		selectedSemesterId === "all"
-			? filteredByClass
-			: filteredByClass.filter((e) => e.semesterId === selectedSemesterId);
+			? filteredByGrade
+			: filteredByGrade.filter((e) => e.semesterId === selectedSemesterId);
 
 	const handleDelete = async (id: number) => {
 		if (!confirm("Yakin ingin menghapus ujian ini?")) return;
@@ -98,14 +119,19 @@ export default function ExamsPage() {
 	}
 
 	return (
-		<Layout>
-			<div>
+		<Layout title="Kelola Ujian">
+			<Head>
+				<title>Kelola Ujian - Admin Panel</title>
+			</Head>
+			<div className="px-2 sm:px-0">
 				<div className="mb-4">
 					<ActiveSemesterBanner />
 				</div>
-				<div className="flex items-center justify-between mb-6">
+				<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
 					<div>
-						<h1 className="text-3xl font-bold text-gray-900">Kelola Ujian</h1>
+						<h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+							Kelola Ujian
+						</h1>
 						{activeSemester ? (
 							<p className="text-gray-600 mt-2">
 								Semester {activeSemester.type === "ganjil" ? "Ganjil" : "Genap"}{" "}
@@ -120,8 +146,8 @@ export default function ExamsPage() {
 					</Link>
 				</div>
 
-				{/* Filters: Semester and Class */}
-				<div className="mb-6 flex gap-4 items-end">
+				{/* Filters: Semester, Angkatan (Grade), and Class */}
+				<div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4 items-stretch">
 					<div>
 						<label className="block text-sm font-medium mb-2">
 							Filter Semester:
@@ -147,20 +173,43 @@ export default function ExamsPage() {
 					</div>
 					<div>
 						<label className="block text-sm font-medium mb-2">
+							Filter Angkatan:
+						</label>
+						<select
+							value={selectedGrade}
+							onChange={(e) => setSelectedGrade(e.target.value)}
+							className="input w-full"
+						>
+							<option value="all">Semua Angkatan</option>
+							{Array.from(new Set(classes.map((c) => c.grade)))
+								.sort((a, b) => a - b)
+								.map((grade) => (
+									<option key={grade} value={grade}>
+										Angkatan {grade}
+									</option>
+								))}
+						</select>
+					</div>
+					<div>
+						<label className="block text-sm font-medium mb-2">
 							Filter Kelas:
 						</label>
 						<select
 							value={selectedClass}
 							onChange={(e) => setSelectedClass(e.target.value)}
-							className="input max-w-xs"
+							className="input w-full"
 						>
 							<option value="all">Semua Kelas</option>
 							{classes
-								.filter((c) =>
-									selectedSemesterId === "all"
-										? true
-										: c.semesterId === selectedSemesterId
-								)
+								.filter((c) => {
+									const semesterOk =
+										selectedSemesterId === "all" ||
+										c.semesterId === selectedSemesterId;
+									const gradeOk =
+										selectedGrade === "all" ||
+										c.grade === parseInt(selectedGrade);
+									return semesterOk && gradeOk;
+								})
 								.map((cls) => (
 									<option key={cls.id} value={cls.id}>
 										{cls.name} - {cls.major}
@@ -196,10 +245,16 @@ export default function ExamsPage() {
 												>
 													{exam.status}
 												</span>
-												{examClass && (
-													<span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-														{examClass.name}
+												{exam.targetType === "grade" ? (
+													<span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
+														{`Angkatan ${exam.grade ?? ""}`}
 													</span>
+												) : (
+													examClass && (
+														<span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+															{examClass.name}
+														</span>
+													)
 												)}
 											</div>
 											<p className="text-gray-600 mb-4">{exam.description}</p>

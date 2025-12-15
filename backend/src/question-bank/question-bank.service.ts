@@ -10,6 +10,8 @@ import { Subject } from "../subjects/subject.entity";
 import { User } from "../users/user.entity";
 import { CreateQuestionBankDto } from "./dto/create-question-bank.dto";
 import { UpdateQuestionBankDto } from "./dto/update-question-bank.dto";
+import { ActivityService } from "../activity/activity.service";
+import { ActivityType } from "../activity/activity.entity";
 
 @Injectable()
 export class QuestionBankService {
@@ -19,7 +21,8 @@ export class QuestionBankService {
 		@InjectRepository(Subject)
 		private subjectRepository: Repository<Subject>,
 		@InjectRepository(User)
-		private userRepository: Repository<User>
+		private userRepository: Repository<User>,
+		private activityService: ActivityService
 	) {}
 
 	async create(
@@ -36,17 +39,29 @@ export class QuestionBankService {
 			);
 		}
 
-		const creator = await this.userRepository.findOne({
-			where: { id: creatorId },
-		});
-
 		const questionBank = this.questionBankRepository.create({
 			...createQuestionBankDto,
 			subjectId: createQuestionBankDto.subjectId,
 			createdById: creatorId,
 		});
 
-		return await this.questionBankRepository.save(questionBank);
+		const saved = await this.questionBankRepository.save(questionBank);
+
+		// Log activity (best-effort)
+		try {
+			await this.activityService.log(
+				creatorId,
+				ActivityType.CREATE,
+				"question_bank",
+				saved.id,
+				"Membuat soal",
+				{ questionId: saved.id }
+			);
+		} catch (err) {
+			console.error("Activity log failed for question create", err);
+		}
+
+		return saved;
 	}
 
 	async findAll(filters?: {
@@ -131,12 +146,42 @@ export class QuestionBankService {
 		}
 
 		Object.assign(questionBank, updateQuestionBankDto);
-		return await this.questionBankRepository.save(questionBank);
+		const saved = await this.questionBankRepository.save(questionBank);
+
+		// Log activity (best-effort)
+		try {
+			await this.activityService.log(
+				saved.createdById || null,
+				ActivityType.UPDATE,
+				"question_bank",
+				saved.id,
+				"Mengubah soal",
+				{ questionId: saved.id }
+			);
+		} catch (err) {
+			console.error("Activity log failed for question update", err);
+		}
+
+		return saved;
 	}
 
 	async remove(id: number): Promise<void> {
 		const questionBank = await this.findOne(id);
 		await this.questionBankRepository.remove(questionBank);
+
+		// Log activity (best-effort)
+		try {
+			await this.activityService.log(
+				questionBank.createdById || null,
+				ActivityType.DELETE,
+				"question_bank",
+				questionBank.id,
+				"Menghapus soal",
+				{ questionId: questionBank.id }
+			);
+		} catch (err) {
+			console.error("Activity log failed for question delete", err);
+		}
 	}
 
 	async incrementUsageCount(id: number): Promise<void> {

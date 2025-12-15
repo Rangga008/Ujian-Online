@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Head from "next/head";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
 import Pagination from "@/components/Pagination";
@@ -6,8 +7,10 @@ import api from "@/lib/api";
 import toast from "react-hot-toast";
 import semestersApi, { Semester } from "@/lib/semestersApi";
 import classesApi, { Class } from "@/lib/classesApi";
+import { useAuthStore } from "@/store/authStore";
 
 export default function StudentsPage() {
+	const { user } = useAuthStore();
 	const [students, setStudents] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [showModal, setShowModal] = useState(false);
@@ -55,7 +58,16 @@ export default function StudentsPage() {
 			setSelectedSemesterId(initialSemesterId);
 			// Load classes (will be filtered client-side by semester)
 			const classesData = await classesApi.getAll();
-			setClasses(classesData);
+			// Filter classes if user is teacher
+			const filteredClasses =
+				user?.role === "teacher" &&
+				user?.teachingClasses &&
+				user.teachingClasses.length > 0
+					? classesData.filter((c) =>
+							user.teachingClasses!.some((tc: any) => tc.id === c.id)
+					  )
+					: classesData;
+			setClasses(filteredClasses);
 			// Fetch students with the correct initial semester
 			const params: any = {};
 			if (initialSemesterId !== "all") {
@@ -87,11 +99,23 @@ export default function StudentsPage() {
 	};
 
 	const allFilteredStudents = students
-		.filter((student) =>
-			selectedClass === "all"
+		.filter((student) => {
+			// If teacher, only show students from their assigned class
+			if (
+				user?.role === "teacher" &&
+				user?.teachingClasses &&
+				user.teachingClasses.length > 0
+			) {
+				const teacherClassIds = user.teachingClasses.map((tc: any) => tc.id);
+				if (!student.class || !teacherClassIds.includes(student.class.id)) {
+					return false;
+				}
+			}
+			// Apply class filter
+			return selectedClass === "all"
 				? true
-				: student.class?.id.toString() === selectedClass
-		)
+				: student.class?.id.toString() === selectedClass;
+		})
 		.filter((student) => {
 			if (!searchQuery.trim()) return true;
 			const query = searchQuery.toLowerCase();
@@ -280,7 +304,7 @@ export default function StudentsPage() {
 
 	if (loading) {
 		return (
-			<Layout>
+			<Layout title="Kelola Siswa">
 				<div className="flex items-center justify-center h-64">
 					<div className="text-xl">Loading...</div>
 				</div>
@@ -289,13 +313,16 @@ export default function StudentsPage() {
 	}
 
 	return (
-		<Layout>
-			<div>
+		<Layout title="Kelola Siswa">
+			<Head>
+				<title>Kelola Siswa - Admin Panel</title>
+			</Head>
+			<div className="px-2 sm:px-0">
 				{/* Active semester banner (default size) */}
 				<div className="mb-4">
 					<ActiveSemesterBanner />
 				</div>
-				<div className="flex items-center justify-between mb-6">
+				<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
 					<div>
 						<h1 className="text-3xl font-bold text-gray-900">Kelola Siswa</h1>
 						{activeSemester ? (

@@ -80,7 +80,7 @@ export class ClassesController {
 	}
 
 	@Patch(":id/subjects")
-	@Roles(UserRole.ADMIN)
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
 	assignSubjects(
 		@Param("id") id: string,
 		@Body("subjectIds") subjectIds: number[]

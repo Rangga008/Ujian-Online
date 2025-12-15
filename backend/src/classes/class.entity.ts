@@ -26,6 +26,9 @@ export class Class {
 	@Column()
 	grade: number; // 10, 11, 12
 
+	@Column({ nullable: true })
+	gradeId: number; // Reference ke Grade table (angkatan)
+
 	@Column()
 	major: string; // IPA, IPS, Bahasa
 

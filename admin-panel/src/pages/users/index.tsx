@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
+import Head from "next/head";
 import Link from "next/link";
 import Layout from "@/components/Layout";
+import { useRouter } from "next/router";
+import { useAuthStore } from "@/store/authStore";
+import { isPageAccessible } from "@/lib/authGuard";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
 import Pagination from "@/components/Pagination";
 import api from "@/lib/api";
@@ -20,9 +24,19 @@ interface User {
 		classId: number | null;
 		class: Class | null;
 	} | null;
+	teachingClasses?: Class[];
 }
 
 export default function UsersPage() {
+	const router = useRouter();
+	const { user } = useAuthStore();
+
+	useEffect(() => {
+		if (user && !isPageAccessible("/users", user.role)) {
+			router.push("/dashboard");
+		}
+	}, [user, router]);
+
 	const [users, setUsers] = useState<User[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [showModal, setShowModal] = useState(false);
@@ -34,6 +48,11 @@ export default function UsersPage() {
 	const [showAssignModal, setShowAssignModal] = useState(false);
 	const [assigningUser, setAssigningUser] = useState<User | null>(null);
 	const [assignClassId, setAssignClassId] = useState<number | null>(null);
+	const [showTeacherAssignModal, setShowTeacherAssignModal] = useState(false);
+	const [assigningTeacher, setAssigningTeacher] = useState<User | null>(null);
+	const [selectedTeacherClasses, setSelectedTeacherClasses] = useState<
+		number[]
+	>([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [itemsPerPage, setItemsPerPage] = useState(10);
 
@@ -200,6 +219,33 @@ export default function UsersPage() {
 		}
 	};
 
+	const handleOpenTeacherAssignModal = (user: User) => {
+		setAssigningTeacher(user);
+		setSelectedTeacherClasses(user.teachingClasses?.map((c) => c.id) || []);
+		setShowTeacherAssignModal(true);
+	};
+
+	const handleAssignTeacherClasses = async () => {
+		if (!assigningTeacher) {
+			toast.error("Data guru tidak valid");
+			return;
+		}
+
+		try {
+			await api.post(`/users/${assigningTeacher.id}/assign-classes`, {
+				classIds: selectedTeacherClasses,
+			});
+			toast.success("Kelas guru berhasil diupdate");
+			setShowTeacherAssignModal(false);
+			await fetchUsers();
+		} catch (error: any) {
+			console.error("Assign teacher error:", error);
+			toast.error(
+				error.response?.data?.message || "Gagal assign kelas ke guru"
+			);
+		}
+	};
+
 	const allFilteredUsers = users
 		.filter((user) =>
 			selectedRole === "all" ? true : user.role === selectedRole
@@ -241,14 +287,17 @@ export default function UsersPage() {
 
 	return (
 		<Layout>
-			<div>
+			<Head>
+				<title>Kelola Pengguna - Admin Panel</title>
+			</Head>
+			<div className="px-2 sm:px-0">
 				<div className="mb-4">
 					<ActiveSemesterBanner />
 				</div>
 
-				<div className="flex items-center justify-between mb-6">
+				<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
 					<div>
-						<h1 className="text-3xl font-bold text-gray-900">
+						<h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
 							Kelola Pengguna
 						</h1>
 						<p className="text-gray-600 mt-2">
@@ -426,7 +475,6 @@ export default function UsersPage() {
 										/>
 									</div>
 								</div>
-
 								<div className="grid grid-cols-2 gap-4">
 									<div>
 										<label className="block text-sm font-medium mb-2">
@@ -445,23 +493,24 @@ export default function UsersPage() {
 											<option value="admin">Admin</option>
 										</select>
 									</div>
-									<div>
-										<label className="block text-sm font-medium mb-2">
-											Password {editingUser && "(kosongkan jika tidak diubah)"}
-										</label>
-										<input
-											type="password"
-											value={formData.password}
-											onChange={(e) =>
-												setFormData({ ...formData, password: e.target.value })
-											}
-											className="input"
-											required={!editingUser}
-											minLength={6}
-										/>
-									</div>
-								</div>
-
+									{!editingUser && (
+										<div>
+											<label className="block text-sm font-medium mb-2">
+												Password
+											</label>
+											<input
+												type="password"
+												value={formData.password}
+												onChange={(e) =>
+													setFormData({ ...formData, password: e.target.value })
+												}
+												className="input"
+												required
+												minLength={6}
+											/>
+										</div>
+									)}
+								</div>{" "}
 								{formData.role === "student" && (
 									<div>
 										<label className="block text-sm font-medium mb-2">
@@ -478,7 +527,6 @@ export default function UsersPage() {
 										/>
 									</div>
 								)}
-
 								{formData.role === "teacher" && (
 									<div>
 										<label className="block text-sm font-medium mb-2">
@@ -495,7 +543,6 @@ export default function UsersPage() {
 										/>
 									</div>
 								)}
-
 								<div className="flex gap-3 pt-4">
 									<button type="submit" className="btn btn-primary flex-1">
 										Simpan

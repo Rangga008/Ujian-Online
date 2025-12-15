@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthStore } from "@/store/authStore";
 import toast from "react-hot-toast";
+import settingsApi from "@/lib/settingsApi";
+import { getAssetUrl } from "@/lib/imageUrl";
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -31,20 +33,53 @@ export default function LoginPage() {
 		}
 	};
 
+	const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+	useEffect(() => {
+		const loadSettings = async () => {
+			try {
+				const settings = await settingsApi.getPublic();
+				let settingsObj: Record<string, any> = {};
+				if (Array.isArray(settings)) {
+					settingsObj = settings.reduce((acc: any, s: any) => {
+						acc[s.key] = s.value;
+						return acc;
+					}, {});
+				} else if (settings && typeof settings === "object") {
+					settingsObj = settings as Record<string, any>;
+				}
+				setLogoUrl(settingsObj["app.logo"] || null);
+			} catch (err) {
+				console.error("Failed to load app settings for login:", err);
+			}
+		};
+
+		loadSettings();
+	}, []);
+
 	return (
-		<div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-500 to-primary-700">
+		<div className="min-h-screen bg-gray-50 flex items-center justify-center">
 			<div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
-				<div className="text-center mb-8">
-					<div className="text-5xl mb-4">📝</div>
-					<h1 className="text-3xl font-bold text-gray-900">Portal Siswa</h1>
-					<p className="text-gray-600 mt-2">Sistem Ujian Online</p>
+				<div className="text-center mb-6">
+					{/** logo from settings if available */}
+					{logoUrl ? (
+						<img
+							src={getAssetUrl(logoUrl)}
+							alt="Logo"
+							className="mx-auto mb-4 h-16 w-auto"
+						/>
+					) : (
+						<div className="text-4xl mb-2">📝</div>
+					)}
+					<h1 className="text-2xl font-bold text-gray-900">Portal Siswa</h1>
+					<p className="text-gray-600 mt-1">Sistem Ujian Online</p>
 				</div>
 
-				<form onSubmit={handleSubmit} className="space-y-6">
+				<form onSubmit={handleSubmit} className="space-y-4">
 					<div>
 						<label
 							htmlFor="nis"
-							className="block text-sm font-medium text-gray-700 mb-2"
+							className="block text-sm font-medium text-gray-700 mb-1"
 						>
 							NIS (Nomor Induk Siswa)
 						</label>
@@ -53,7 +88,7 @@ export default function LoginPage() {
 							type="text"
 							value={nis}
 							onChange={(e) => setNis(e.target.value)}
-							className="input"
+							className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-300"
 							placeholder="12345"
 							required
 						/>
@@ -62,7 +97,7 @@ export default function LoginPage() {
 					<div>
 						<label
 							htmlFor="password"
-							className="block text-sm font-medium text-gray-700 mb-2"
+							className="block text-sm font-medium text-gray-700 mb-1"
 						>
 							Password
 						</label>
@@ -71,7 +106,7 @@ export default function LoginPage() {
 							type="password"
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
-							className="input"
+							className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-300"
 							placeholder="••••••••"
 							required
 						/>
@@ -80,16 +115,16 @@ export default function LoginPage() {
 					<button
 						type="submit"
 						disabled={isLoading}
-						className="w-full btn btn-primary py-3 text-lg"
+						className="w-full bg-primary-600 hover:bg-primary-700 text-white rounded-lg py-2 font-medium"
 					>
-						{isLoading ? "Loading..." : "Login"}
+						{isLoading ? "Memproses..." : "Masuk"}
 					</button>
 				</form>
 
-				<div className="mt-6 p-4 bg-blue-50 rounded-lg text-sm">
-					<p className="font-semibold text-blue-900">Demo Login:</p>
-					<p className="text-blue-700">NIS: 12345</p>
-					<p className="text-blue-700">Password: siswa123</p>
+				<div className="mt-6 p-4 bg-gray-50 rounded-lg text-sm text-center">
+					<p className="font-semibold text-gray-700">Demo Login:</p>
+					<p className="text-gray-600">NIS: 12345</p>
+					<p className="text-gray-600">Password: siswa123</p>
 				</div>
 			</div>
 		</div>

@@ -54,7 +54,7 @@ export class Exam {
 	@Column({ nullable: true })
 	classId: number; // Target class for this exam
 
-	@ManyToOne(() => Class, (classEntity) => classEntity.id)
+	@ManyToOne(() => Class)
 	@JoinColumn({ name: "classId" })
 	class: Class;
 
@@ -96,7 +96,10 @@ export class Exam {
 	@Column({ default: false })
 	showResultImmediately: boolean;
 
-	@OneToMany(() => Question, (question) => question.exam, { cascade: true })
+	@Column({ nullable: true })
+	imageUrl?: string;
+
+	@OneToMany(() => Question, (question) => question.exam)
 	questions: Question[];
 
 	@OneToMany(() => Submission, (submission) => submission.exam)

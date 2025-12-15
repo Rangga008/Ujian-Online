@@ -9,9 +9,7 @@ interface SettingsState {
 	fetchSettings: () => Promise<void>;
 	fetchSettingsObject: () => Promise<void>;
 	updateSetting: (key: string, value: string) => Promise<void>;
-	bulkUpdateSettings: (
-		updates: Array<{ key: string; value: string }>
-	) => Promise<void>;
+	bulkUpdateSettings: (updates: Record<string, string>) => Promise<void>;
 	getSettingValue: (key: string, defaultValue?: any) => any;
 }
 
@@ -36,10 +34,64 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
 	fetchSettingsObject: async () => {
 		try {
-			const data = await settingsApi.getAsObject();
-			set({ settingsObject: data });
+			// Try to get full object (requires auth), fallback to public
+			try {
+				const data = await settingsApi.getAsObject();
+				set({ settingsObject: data });
+			} catch (authError: any) {
+				// If unauthorized or any error, fetch public settings only
+				if (
+					authError.response?.status === 401 ||
+					authError.code === "ECONNABORTED" ||
+					authError.code === "ERR_BAD_REQUEST"
+				) {
+					console.log("[SettingsStore] Fetching public settings only");
+					try {
+						const publicSettings = await settingsApi.getPublic();
+						// Backend returns object directly, not array
+						if (
+							typeof publicSettings === "object" &&
+							!Array.isArray(publicSettings)
+						) {
+							set({ settingsObject: publicSettings });
+						} else {
+							// If it's array format (old API)
+							const publicObject: Record<string, any> = {};
+							(publicSettings as any[]).forEach((setting) => {
+								publicObject[setting.key] = setting.value;
+							});
+							set({ settingsObject: publicObject });
+						}
+					} catch (publicError: any) {
+						console.error(
+							"[SettingsStore] Failed to fetch public settings:",
+							publicError
+						);
+						// Set default values if all fails
+						set({
+							settingsObject: {
+								"app.name": "Admin Panel",
+								"app.description": "Portal administrasi ujian online",
+								"app.favicon": "/favicon.ico",
+							},
+						});
+					}
+				} else {
+					throw authError;
+				}
+			}
 		} catch (error: any) {
 			console.error("Failed to fetch settings object:", error);
+			// Ensure we always have some default values
+			if (Object.keys(get().settingsObject).length === 0) {
+				set({
+					settingsObject: {
+						"app.name": "Admin Panel",
+						"app.description": "Portal administrasi ujian online",
+						"app.favicon": "/favicon.ico",
+					},
+				});
+			}
 		}
 	},
 
@@ -58,9 +110,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 		}
 	},
 
-	bulkUpdateSettings: async (
-		updates: Array<{ key: string; value: string }>
-	) => {
+	bulkUpdateSettings: async (updates: Record<string, string>) => {
 		set({ loading: true, error: null });
 		try {
 			await settingsApi.bulkUpdate({ settings: updates });

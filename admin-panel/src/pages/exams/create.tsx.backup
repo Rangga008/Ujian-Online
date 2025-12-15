@@ -1,0 +1,1429 @@
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/router";
+import Head from "next/head";
+import Layout from "@/components/Layout";
+import api from "@/lib/api";
+import toast from "react-hot-toast";
+import semestersApi, { Semester } from "@/lib/semestersApi";
+import classesApi, { Class } from "@/lib/classesApi";
+import gradesApi, { Grade } from "@/lib/gradesApi";
+import { useAuthStore } from "@/store/authStore";
+import {
+	compressImageBrowser,
+	estimateCompressionRatio,
+	formatFileSize,
+} from "@/lib/imageCompression";
+import { getImageUrl } from "@/lib/imageUrl";
+import QuestionModal from "@/components/QuestionModal";
+
+interface Subject {
+	id: number;
+	name: string;
+	code: string;
+}
+
+interface Question {
+	questionText: string;
+	type: "multiple_choice" | "mixed_multiple_choice" | "true_false" | "essay";
+	options: string[];
+	correctAnswer: string;
+	points: number;
+	orderIndex: number;
+	imageUrl?: string;
+	imageFile?: File | null;
+}
+
+export default function CreateExamPage() {
+	const router = useRouter();
+	const { user } = useAuthStore();
+	const [loading, setLoading] = useState(false);
+	const [activeSemester, setActiveSemester] = useState<Semester | null>(null);
+	const [semesters, setSemesters] = useState<Semester[]>([]);
+	const [classes, setClasses] = useState<Class[]>([]);
+	const [subjects, setSubjects] = useState<Subject[]>([]);
+	const [grades, setGrades] = useState<Grade[]>([]);
+	const [questions, setQuestions] = useState<Question[]>([]);
+	const [examImageFile, setExamImageFile] = useState<File | null>(null);
+	const [examImagePreview, setExamImagePreview] = useState<string>("");
+	const [importingQuestions, setImportingQuestions] = useState(false);
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+	// Form state untuk soal yang sedang diedit
+	const [showQuestionModal, setShowQuestionModal] = useState(false);
+	const [editingQuestionIndex, setEditingQuestionIndex] = useState<
+		number | null
+	>(null);
+	const [currentQuestionForm, setCurrentQuestionForm] = useState({
+		questionText: "",
+		type: "multiple_choice" as Question["type"],
+		options: ["", "", "", ""],
+		correctAnswer: "",
+		points: 1,
+		imageFile: null as File | null,
+		imageUrl: "",
+	});
+
+	const [formData, setFormData] = useState({
+		title: "",
+		description: "",
+		duration: 60,
+		startTime: "",
+		endTime: "",
+		semesterId: "",
+		targetType: "class" as "class" | "grade",
+		classId: "",
+		gradeId: "",
+		subjectId: "",
+		randomizeQuestions: true,
+		showResultImmediately: false,
+		status: "draft",
+	});
+
+	useEffect(() => {
+		fetchInitialData();
+	}, []);
+
+	useEffect(() => {
+		if (formData.semesterId) {
+			fetchClassesBySemester(Number(formData.semesterId));
+		}
+	}, [formData.semesterId]);
+
+	const fetchInitialData = async () => {
+		try {
+			const [active, allSemesters, subjectsData, gradesData] =
+				await Promise.all([
+					semestersApi.getActive().catch(() => null),
+					semestersApi.getAll(),
+					api.get("/subjects").then((res) => res.data),
+					gradesApi.getAll(),
+				]);
+			setActiveSemester(active);
+			setSemesters(allSemesters);
+			setSubjects(subjectsData);
+			setGrades(gradesData.sort((a: Grade, b: Grade) => a.level - b.level));
+
+			if (active) {
+				setFormData((prev) => ({
+					...prev,
+					semesterId: active.id.toString(),
+				}));
+			}
+		} catch (error) {
+			toast.error("Gagal memuat data");
+		}
+	};
+
+	const fetchClassesBySemester = async (semesterId: number) => {
+		try {
+			const allClasses = await classesApi.getAll();
+			const filtered = allClasses.filter((c) => c.semesterId === semesterId);
+			// Filter for teachers - only show their assigned class
+			const teacherFiltered =
+				user?.role === "teacher" &&
+				user?.teachingClasses &&
+				user.teachingClasses.length > 0
+					? filtered.filter((c) =>
+							user.teachingClasses!.some((tc: any) => tc.id === c.id)
+					  )
+					: filtered;
+			setClasses(teacherFiltered);
+		} catch (error) {
+			toast.error("Gagal memuat kelas");
+		}
+	};
+
+	const handleSaveQuestion = () => {
+		if (!currentQuestionForm.questionText.trim()) {
+			toast.error("Pertanyaan tidak boleh kosong");
+			return;
+		}
+
+		if (currentQuestionForm.type === "essay") {
+			// Essay hanya butuh pertanyaan
+		} else if (currentQuestionForm.type === "true_false") {
+			if (!currentQuestionForm.correctAnswer) {
+				toast.error("Pilih jawaban Benar atau Salah");
+				return;
+			}
+		} else {
+			if (!currentQuestionForm.options.some((o) => o.trim())) {
+				toast.error("Minimal ada satu pilihan jawaban");
+				return;
+			}
+			if (!currentQuestionForm.correctAnswer) {
+				toast.error("Pilih jawaban yang benar");
+				return;
+			}
+		}
+
+		if (editingQuestionIndex !== null) {
+			// Update existing
+			const updated = [...questions];
+			updated[editingQuestionIndex] = {
+				...updated[editingQuestionIndex],
+				questionText: currentQuestionForm.questionText,
+				type: currentQuestionForm.type,
+				options: currentQuestionForm.options,
+				correctAnswer: currentQuestionForm.correctAnswer,
+				points: currentQuestionForm.points,
+				imageFile:
+					currentQuestionForm.imageFile ||
+					updated[editingQuestionIndex].imageFile,
+				imageUrl:
+					currentQuestionForm.imageUrl ||
+					updated[editingQuestionIndex].imageUrl,
+			};
+			setQuestions(updated);
+			toast.success("Soal berhasil diperbarui");
+		} else {
+			// Add new
+			const totalQuestions = questions.length + 1;
+			const pointsPerQuestion = Math.floor(100 / totalQuestions);
+			const remainder = 100 % totalQuestions;
+
+			const newQuestion: Question = {
+				questionText: currentQuestionForm.questionText,
+				type: currentQuestionForm.type,
+				options: currentQuestionForm.options,
+				correctAnswer: currentQuestionForm.correctAnswer,
+				points: pointsPerQuestion + (questions.length < remainder ? 1 : 0),
+				orderIndex: questions.length,
+				imageFile: currentQuestionForm.imageFile || null,
+				imageUrl: currentQuestionForm.imageUrl || "",
+			};
+
+			// Redistribute points
+			const updated = questions.map((q, i) => ({
+				...q,
+				points: pointsPerQuestion + (i < remainder ? 1 : 0),
+			}));
+
+			setQuestions([...updated, newQuestion]);
+			toast.success("Soal berhasil ditambahkan");
+		}
+
+		// Reset form
+		setEditingQuestionIndex(null);
+		setCurrentQuestionForm({
+			questionText: "",
+			type: "multiple_choice",
+			options: ["", "", "", ""],
+			correctAnswer: "",
+			points: 1,
+			imageFile: null,
+			imageUrl: "",
+		});
+		// Open modal for next question
+		setShowQuestionModal(true);
+	};
+
+	const handleAddQuestionFromModal = async (questionData: any) => {
+		const totalQuestions = questions.length + 1;
+		const pointsPerQuestion = Math.floor(100 / totalQuestions);
+		const remainder = 100 % totalQuestions;
+
+		// Compress imageFile if exists
+		let compressedImageFile = questionData.imageFile;
+		if (questionData.imageFile) {
+			try {
+				const compressed = await compressImageBrowser(questionData.imageFile);
+				compressedImageFile = compressed.file;
+				console.log(
+					`Image compressed: ${formatFileSize(
+						questionData.imageFile.size
+					)} → ${formatFileSize(compressed.file.size)}`
+				);
+			} catch (error) {
+				console.error("Error compressing image:", error);
+				toast.error("Gagal mengompres gambar");
+				return;
+			}
+		}
+
+		// Convert imageFile to data URL for preview
+		let imageUrl = questionData.imageUrl || "";
+		if (compressedImageFile) {
+			imageUrl = await new Promise<string>((resolve) => {
+				const reader = new FileReader();
+				reader.onloadend = () => {
+					resolve(reader.result as string);
+				};
+				reader.readAsDataURL(compressedImageFile);
+			});
+		}
+
+		if (editingQuestionIndex !== null) {
+			// Update existing question
+			const updated = [...questions];
+			updated[editingQuestionIndex] = {
+				...updated[editingQuestionIndex],
+				questionText: questionData.questionText,
+				type: questionData.type,
+				options: questionData.options,
+				correctAnswer: questionData.correctAnswer,
+				points: questionData.points,
+				imageFile:
+					compressedImageFile || updated[editingQuestionIndex].imageFile,
+				imageUrl: imageUrl || updated[editingQuestionIndex].imageUrl,
+			};
+			setQuestions(updated);
+			toast.success("Soal berhasil diperbarui");
+		} else {
+			// Add new question
+			const newQuestion: Question = {
+				questionText: questionData.questionText,
+				type: questionData.type,
+				options: questionData.options,
+				correctAnswer: questionData.correctAnswer,
+				points: pointsPerQuestion + (questions.length < remainder ? 1 : 0),
+				orderIndex: questions.length,
+				imageFile: compressedImageFile || null,
+				imageUrl: imageUrl || "",
+			};
+
+			// Redistribute points for all questions
+			const updated = questions.map((q, i) => ({
+				...q,
+				points: pointsPerQuestion + (i < remainder ? 1 : 0),
+			}));
+
+			setQuestions([...updated, newQuestion]);
+			toast.success("Soal berhasil ditambahkan");
+		}
+
+		// Close modal and reset
+		setShowQuestionModal(false);
+		setEditingQuestionIndex(null);
+		setCurrentQuestionForm({
+			questionText: "",
+			type: "multiple_choice",
+			options: ["", "", "", ""],
+			correctAnswer: "",
+			points: 1,
+			imageFile: null,
+			imageUrl: "",
+		});
+	};
+
+	const handleEditQuestion = (index: number) => {
+		setEditingQuestionIndex(index);
+		// Load question into currentQuestionForm for inline editing
+		const question = questions[index];
+		setCurrentQuestionForm({
+			questionText: question.questionText,
+			type: question.type,
+			options: question.options,
+			correctAnswer: question.correctAnswer,
+			points: question.points,
+			imageFile: null,
+			imageUrl: question.imageUrl || "",
+		});
+		setShowQuestionModal(true);
+	};
+
+	const addQuestion = () => {
+		const totalQuestions = questions.length + 1;
+		const pointsPerQuestion = Math.floor(100 / totalQuestions);
+		const remainder = 100 % totalQuestions;
+
+		const newQuestion: Question = {
+			questionText: "",
+			type: "multiple_choice",
+			options: ["", "", "", ""],
+			correctAnswer: "",
+			points: pointsPerQuestion + (questions.length < remainder ? 1 : 0),
+			orderIndex: questions.length,
+			imageUrl: "",
+			imageFile: null,
+		};
+
+		// Redistribute points for all questions
+		const updated = questions.map((q, i) => ({
+			...q,
+			points: pointsPerQuestion + (i < remainder ? 1 : 0),
+		}));
+
+		setQuestions([...updated, newQuestion]);
+	};
+
+	const removeQuestion = (index: number) => {
+		const filtered = questions.filter((_, i) => i !== index);
+		const totalQuestions = filtered.length;
+
+		if (totalQuestions === 0) {
+			setQuestions([]);
+			return;
+		}
+
+		// Redistribute points to make total = 100
+		const pointsPerQuestion = Math.floor(100 / totalQuestions);
+		const remainder = 100 % totalQuestions;
+
+		const updated = filtered.map((q, i) => ({
+			...q,
+			orderIndex: i,
+			points: pointsPerQuestion + (i < remainder ? 1 : 0),
+		}));
+
+		setQuestions(updated);
+	};
+
+	const updateQuestion = (index: number, field: keyof Question, value: any) => {
+		const updated = [...questions];
+		updated[index] = { ...updated[index], [field]: value };
+		setQuestions(updated);
+	};
+
+	const updateQuestionOption = (
+		questionIndex: number,
+		optionIndex: number,
+		value: string
+	) => {
+		const updated = [...questions];
+		updated[questionIndex].options[optionIndex] = value;
+		setQuestions(updated);
+	};
+
+	const dataUrlToFile = (dataUrl: string, filename: string): File | null => {
+		try {
+			const arr = dataUrl.split(",");
+			if (arr.length < 2) return null;
+			const mimeMatch = arr[0].match(/:(.*?);/);
+			const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+			const bstr = atob(arr[1]);
+			let n = bstr.length;
+			const u8arr = new Uint8Array(n);
+			while (n--) {
+				u8arr[n] = bstr.charCodeAt(n);
+			}
+			return new File([u8arr], filename, { type: mime });
+		} catch (err) {
+			console.error("Failed to convert dataUrl to File", err);
+			return null;
+		}
+	};
+
+	const parseMarkdownToQuestions = (markdown: string): Question[] => {
+		const blocks = markdown
+			.split(/\n-{3,}\n/)
+			.map((b) => b.trim())
+			.filter(Boolean);
+
+		const nextQuestions: Question[] = [];
+
+		blocks.forEach((block, blockIndex) => {
+			const lines = block
+				.split(/\r?\n/)
+				.map((l) => l.trim())
+				.filter(Boolean);
+			if (!lines.length) return;
+
+			let type: Question["type"] | string = "multiple_choice";
+			let points = 10;
+			let correctAnswer = "";
+			let questionText = "";
+			let options: string[] = [];
+			let imageDataUrl: string | undefined;
+
+			lines.forEach((line) => {
+				const lower = line.toLowerCase();
+				if (lower.startsWith("type:")) {
+					const raw = line.split(":").slice(1).join(":").trim().toLowerCase();
+					if (
+						raw === "mixed_multiple_choice" ||
+						raw === "mixed" ||
+						raw === "majemuk"
+					) {
+						type = "mixed_multiple_choice";
+					} else if (raw === "true_false" || raw === "true/false") {
+						type = "true_false";
+					} else if (raw === "essay" || raw === "esai") {
+						type = "essay";
+					} else {
+						type = "multiple_choice";
+					}
+					return;
+				}
+
+				if (lower.startsWith("points:")) {
+					const val = parseInt(line.split(":").slice(1).join(":").trim(), 10);
+					if (!Number.isNaN(val)) points = val;
+					return;
+				}
+
+				if (lower.startsWith("correct:")) {
+					correctAnswer = line.split(":").slice(1).join(":").trim();
+					return;
+				}
+
+				if (lower.startsWith("question:")) {
+					questionText = line.split(":").slice(1).join(":").trim();
+					return;
+				}
+
+				if (/^![^\]]*\]\((data:[^)]+)\)/.test(line)) {
+					const match = line.match(/!\[[^\]]*\]\((data:[^)]+)\)/);
+					if (match?.[1]) {
+						imageDataUrl = match[1];
+					}
+					return;
+				}
+
+				if (/^[A-E][\.)]/i.test(line)) {
+					options.push(line.replace(/^[A-E][\.)]\s*/, "").trim());
+					return;
+				}
+
+				// treat remaining text as part of question body
+				questionText = questionText ? `${questionText}\n${line}` : line;
+			});
+
+			const mapCorrectAnswer = (
+				value: string,
+				currentType: Question["type"],
+				opts: string[]
+			) => {
+				if (!value) return "";
+				if (currentType === "multiple_choice") {
+					const letter = value.trim().toUpperCase();
+					if (/^[A-E]$/.test(letter) && opts.length) {
+						const idx = letter.charCodeAt(0) - 65;
+						return opts[idx] || value;
+					}
+					return value;
+				}
+
+				if (currentType === "mixed_multiple_choice") {
+					const letters = value
+						.split(/[,;]/)
+						.map((v) => v.trim().toUpperCase())
+						.filter(Boolean);
+					const mapped = letters
+						.map((ltr) => {
+							if (/^[A-E]$/.test(ltr) && opts.length) {
+								const idx = ltr.charCodeAt(0) - 65;
+								return opts[idx];
+							}
+							return ltr;
+						})
+						.filter(Boolean);
+					return mapped.join(",");
+				}
+
+				return value;
+			};
+
+			const resolvedType = ((): Question["type"] => {
+				if (type === "mixed_multiple_choice") return "mixed_multiple_choice";
+				if (type === "true_false") return "true_false";
+				if (type === "essay") return "essay";
+				return "multiple_choice";
+			})();
+
+			const resolvedOptions =
+				resolvedType === "essay" || resolvedType === "true_false"
+					? []
+					: options.length
+					? options
+					: ["", ""];
+
+			const resolvedCorrect =
+				resolvedType === "essay"
+					? ""
+					: resolvedType === "true_false"
+					? correctAnswer === "Salah"
+						? "Salah"
+						: "Benar"
+					: mapCorrectAnswer(correctAnswer, resolvedType, resolvedOptions);
+
+			if (!questionText.trim()) return;
+
+			nextQuestions.push({
+				questionText: questionText.trim(),
+				type: resolvedType,
+				options: resolvedOptions,
+				correctAnswer: resolvedCorrect,
+				points: points > 0 ? points : 1,
+				orderIndex: questions.length + nextQuestions.length,
+				imageUrl: "",
+				imageFile: imageDataUrl
+					? dataUrlToFile(
+							imageDataUrl,
+							`imported-${Date.now()}-${blockIndex}.png`
+					  )
+					: null,
+			});
+		});
+
+		return nextQuestions;
+	};
+
+	const handleImportFromWord = async (file: File) => {
+		setImportingQuestions(true);
+		try {
+			const mammoth = await import("mammoth/mammoth.browser");
+			const buffer = await file.arrayBuffer();
+			const result = await mammoth.convertToMarkdown(
+				{ arrayBuffer: buffer },
+				{
+					convertImage: mammoth.images.inline(async (element: any) => {
+						const base64 = await element.read("base64");
+						return {
+							src: `data:${element.contentType};base64,${base64}`,
+						};
+					}),
+				}
+			);
+
+			const parsed = parseMarkdownToQuestions(result.value);
+			if (!parsed.length) {
+				toast.error(
+					"Template tidak terbaca. Pastikan format sesuai contoh dan dipisah '---'."
+				);
+				return;
+			}
+
+			setQuestions((prev) => {
+				const merged = [...prev];
+				parsed.forEach((p, idx) => {
+					merged.push({ ...p, orderIndex: merged.length + idx });
+				});
+				return merged;
+			});
+			toast.success(`Berhasil mengimpor ${parsed.length} soal`);
+		} catch (error) {
+			console.error("Import soal gagal", error);
+			toast.error(
+				"Gagal mengimpor soal. Gunakan file .docx sesuai template dan coba lagi."
+			);
+		} finally {
+			setImportingQuestions(false);
+		}
+	};
+
+	const handleImportInputChange = async (
+		e: React.ChangeEvent<HTMLInputElement>
+	) => {
+		const file = e.target.files?.[0];
+		if (file) {
+			await handleImportFromWord(file);
+		}
+		e.target.value = "";
+	};
+
+	const downloadTemplateDoc = () => {
+		const template = `Type: multiple_choice
+Points: 10
+Question: Siapa proklamator Indonesia?
+A) Soekarno
+B) Hatta
+C) Soekarno-Hatta
+D) BJ Habibie
+Correct: C
+
+---
+Type: true_false
+Points: 5
+Question: Matahari terbit dari barat.
+Correct: Salah
+
+---
+Type: essay
+Points: 15
+Question: Jelaskan proses fotosintesis.
+`;
+
+		const blob = new Blob([template], { type: "application/msword" });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement("a");
+		link.href = url;
+		link.download = "template-import-soal.doc";
+		link.click();
+		URL.revokeObjectURL(url);
+	};
+
+	const handleSubmit = async (e: React.FormEvent) => {
+		e.preventDefault();
+
+		// Validate datetime fields
+		if (!formData.startTime) {
+			toast.error("Masukkan waktu mulai");
+			return;
+		}
+
+		if (!formData.endTime) {
+			toast.error("Masukkan waktu selesai");
+			return;
+		}
+
+		const startDate = new Date(formData.startTime);
+		const endDate = new Date(formData.endTime);
+
+		if (isNaN(startDate.getTime())) {
+			toast.error("Format waktu mulai tidak valid");
+			return;
+		}
+
+		if (isNaN(endDate.getTime())) {
+			toast.error("Format waktu selesai tidak valid");
+			return;
+		}
+
+		if (startDate >= endDate) {
+			toast.error("Waktu selesai harus lebih besar dari waktu mulai");
+			return;
+		}
+
+		if (!formData.semesterId) {
+			toast.error("Pilih semester terlebih dahulu");
+			return;
+		}
+
+		if (formData.targetType === "class" && !formData.classId) {
+			toast.error("Pilih kelas terlebih dahulu");
+			return;
+		}
+
+		if (formData.targetType === "grade" && !formData.gradeId) {
+			toast.error("Pilih angkatan terlebih dahulu");
+			return;
+		}
+
+		if (questions.length === 0) {
+			toast.error("Tambahkan minimal 1 soal");
+			return;
+		}
+
+		for (let i = 0; i < questions.length; i++) {
+			const q = questions[i];
+			if (!q.questionText.trim()) {
+				toast.error(`Soal ${i + 1}: Pertanyaan harus diisi`);
+				return;
+			}
+			if (!q.points || q.points <= 0) {
+				toast.error(`Soal ${i + 1}: Poin harus lebih dari 0`);
+				return;
+			}
+			if (q.type === "essay") {
+				continue;
+			}
+			if (q.type === "true_false") {
+				if (!q.correctAnswer) {
+					toast.error(`Soal ${i + 1}: Pilih Benar atau Salah`);
+					return;
+				}
+				continue;
+			}
+
+			const filledOptions = (q.options || []).filter((o) => o.trim());
+			if (filledOptions.length < 2) {
+				toast.error(`Soal ${i + 1}: Minimal 2 pilihan diisi`);
+				return;
+			}
+			if (!q.correctAnswer.trim()) {
+				toast.error(`Soal ${i + 1}: Pilih jawaban benar`);
+				return;
+			}
+		}
+
+		setLoading(true);
+		try {
+			// Upload exam image if provided
+			let examImageUrl = "";
+			if (examImageFile) {
+				const fd = new FormData();
+				fd.append("file", examImageFile);
+				const uploadRes = await api.post("/settings/upload", fd, {
+					headers: { "Content-Type": "multipart/form-data" },
+				});
+				examImageUrl = uploadRes.data.path || uploadRes.data.url;
+			}
+
+			// Calculate proportional points to total 100
+			const totalRawPoints = questions.reduce(
+				(sum, q) => sum + (q.points || 0),
+				0
+			);
+			const normalizedQuestions = questions.map((q) => ({
+				...q,
+				points:
+					totalRawPoints > 0
+						? Math.round((q.points / totalRawPoints) * 100)
+						: Math.round(100 / questions.length),
+			}));
+
+			// Adjust to ensure exact 100
+			const calculatedTotal = normalizedQuestions.reduce(
+				(sum, q) => sum + q.points,
+				0
+			);
+			if (calculatedTotal !== 100 && normalizedQuestions.length > 0) {
+				normalizedQuestions[0].points += 100 - calculatedTotal;
+			}
+
+			const processedQuestions = await Promise.all(
+				normalizedQuestions.map(async (q, idx) => {
+					let imageUrl = "";
+					
+					// Upload image if imageFile exists (compressed File object)
+					if (q.imageFile) {
+						const fd = new FormData();
+						fd.append("file", q.imageFile);
+						const uploadRes = await api.post("/settings/upload", fd, {
+							headers: { "Content-Type": "multipart/form-data" },
+						});
+						imageUrl = uploadRes.data.path || uploadRes.data.url;
+					}
+
+					const base: any = {
+						questionText: q.questionText,
+						type: q.type,
+						points: q.points,
+						orderIndex: idx,
+						imageUrl,
+					};
+						orderIndex: idx,
+						imageUrl,
+					};
+
+					if (q.type === "essay") {
+						return { ...base, options: [], correctAnswer: "" };
+					}
+
+					if (q.type === "true_false") {
+						return {
+							...base,
+							options: ["Benar", "Salah"],
+							correctAnswer: String(q.correctAnswer ?? ""),
+						};
+					}
+
+					const optionsRaw = q.options || [];
+					const filteredOptions = optionsRaw
+						.map((o) => o.trim())
+						.filter((o) => o !== "");
+
+					if (q.type === "mixed_multiple_choice") {
+						const selectedIndexes = (q.correctAnswer || "")
+							.split(",")
+							.map((x) => Number(x.trim()))
+							.filter((n) => !Number.isNaN(n));
+
+						const mappedAnswers = selectedIndexes
+							.map((idx) => (optionsRaw[idx] || "").trim())
+							.filter(Boolean)
+							.join(",");
+
+						return {
+							...base,
+							options: filteredOptions,
+							correctAnswer: String(mappedAnswers || ""),
+						};
+					}
+
+					return {
+						...base,
+						options: filteredOptions,
+						correctAnswer: String(q.correctAnswer || ""),
+					};
+				})
+			);
+
+			const payload: any = {
+				title: formData.title,
+				description: formData.description,
+				duration: formData.duration,
+				startTime: new Date(formData.startTime).toISOString(),
+				endTime: new Date(formData.endTime).toISOString(),
+				semesterId: Number(formData.semesterId),
+				targetType: formData.targetType,
+				subjectId: formData.subjectId ? Number(formData.subjectId) : undefined,
+				totalScore: 100,
+				totalQuestions: processedQuestions.length,
+				randomizeQuestions: formData.randomizeQuestions,
+				showResultImmediately: formData.showResultImmediately,
+				status: formData.status,
+				imageUrl: examImageUrl || undefined,
+				questions: processedQuestions,
+			};
+			if (formData.targetType === "class") {
+				payload.classId = Number(formData.classId);
+			} else {
+				const selectedGrade = grades.find(
+					(g) => g.id === Number(formData.gradeId)
+				);
+				if (!selectedGrade) {
+					toast.error("Pilih angkatan yang valid");
+					return;
+				}
+				payload.grade = selectedGrade.name;
+				payload.classId = undefined;
+			}
+
+			await api.post("/exams", payload);
+			toast.success("Ujian berhasil dibuat");
+			router.push("/exams");
+		} catch (error: any) {
+			toast.error(error.response?.data?.message || "Gagal membuat ujian");
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	return (
+		<Layout title="Buat Ujian">
+			<Head>
+				<title>Buat Ujian Baru - Admin Panel</title>
+			</Head>
+			<div className="max-w-5xl mx-auto px-2 sm:px-4">
+				<div className="mb-6">
+					<h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+						Buat Ujian Baru
+					</h1>
+					<p className="text-gray-600 mt-2">
+						Isi informasi ujian dan tambahkan soal
+					</p>
+				</div>
+
+				<form onSubmit={handleSubmit} className="space-y-6">
+					<div className="card">
+						<h2 className="text-xl font-bold mb-4">Informasi Ujian</h2>
+						<div className="grid grid-cols-2 gap-4">
+							<div className="col-span-2">
+								<label className="block text-sm font-medium mb-2">
+									Judul Ujian *
+								</label>
+								<input
+									type="text"
+									value={formData.title}
+									onChange={(e) =>
+										setFormData({ ...formData, title: e.target.value })
+									}
+									className="input"
+									required
+								/>
+							</div>
+
+							<div className="col-span-2">
+								<label className="block text-sm font-medium mb-2">
+									Gambar Ujian (opsional)
+								</label>
+								<div className="space-y-2">
+									<input
+										type="file"
+										accept="image/*"
+										onChange={async (e) => {
+											const file = e.target.files?.[0];
+											if (!file) return;
+
+											try {
+												// Try to compress the image
+												toast.loading("Kompres gambar...", { duration: 2000 });
+												const compressed = await compressImageBrowser(
+													file,
+													1920,
+													0.75
+												);
+
+												setExamImageFile(compressed.file);
+
+												// Show preview
+												const reader = new FileReader();
+												reader.onloadend = () => {
+													setExamImagePreview(reader.result as string);
+												};
+												reader.readAsDataURL(compressed.file);
+
+												toast.success(
+													`Gambar dimuat (${formatFileSize(
+														compressed.originalSize
+													)} → ${formatFileSize(
+														compressed.estimatedSize
+													)}, ${compressed.reduction.toFixed(1)}% kompresi)`
+												);
+											} catch (err) {
+												console.error(
+													"Compression failed, using original",
+													err
+												);
+												// Fallback to original file
+												setExamImageFile(file);
+												const reader = new FileReader();
+												reader.onloadend = () => {
+													setExamImagePreview(reader.result as string);
+												};
+												reader.readAsDataURL(file);
+												toast.success(
+													`Gambar dimuat (${formatFileSize(file.size)})`
+												);
+											}
+										}}
+										className="input"
+									/>
+									{examImageFile && (
+										<p className="text-sm text-green-600">
+											✓ File dipilih: {examImageFile.name} (
+											{formatFileSize(examImageFile.size)})
+										</p>
+									)}
+									{examImagePreview && (
+										<div className="mt-2">
+											<img
+												src={examImagePreview}
+												alt="Preview"
+												className="h-32 rounded object-cover"
+											/>
+										</div>
+									)}
+								</div>
+							</div>
+
+							<div className="col-span-2">
+								<label className="block text-sm font-medium mb-2">
+									Deskripsi *
+								</label>
+								<textarea
+									value={formData.description}
+									onChange={(e) =>
+										setFormData({ ...formData, description: e.target.value })
+									}
+									className="input"
+									rows={3}
+									required
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">
+									Semester *
+								</label>
+								<select
+									value={formData.semesterId}
+									onChange={(e) =>
+										setFormData({ ...formData, semesterId: e.target.value })
+									}
+									className="input"
+									required
+								>
+									<option value="">Pilih Semester</option>
+									{semesters.map((sem) => (
+										<option key={sem.id} value={sem.id}>
+											{sem.name} - {sem.year}
+										</option>
+									))}
+								</select>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">
+									Target Ujian *
+								</label>
+								<select
+									value={formData.targetType}
+									onChange={(e) => {
+										const targetType = e.target.value as "class" | "grade";
+										setFormData({
+											...formData,
+											targetType,
+											classId: "",
+											gradeId: "",
+										});
+									}}
+									className="input"
+									required
+								>
+									<option value="class">Satu Kelas</option>
+									<option value="grade">Satu Angkatan</option>
+								</select>
+							</div>
+
+							{formData.targetType === "class" ? (
+								<div>
+									<label className="block text-sm font-medium mb-2">
+										Kelas *
+									</label>
+									<select
+										value={formData.classId}
+										onChange={(e) =>
+											setFormData({ ...formData, classId: e.target.value })
+										}
+										className="input"
+										required
+										disabled={!formData.semesterId}
+									>
+										<option value="">Pilih Kelas</option>
+										{classes.map((cls) => (
+											<option key={cls.id} value={cls.id}>
+												{cls.name} - {cls.major}
+											</option>
+										))}
+									</select>
+								</div>
+							) : (
+								<div>
+									<label className="block text-sm font-medium mb-2">
+										Angkatan *
+									</label>
+									<select
+										value={formData.gradeId}
+										onChange={(e) =>
+											setFormData({ ...formData, gradeId: e.target.value })
+										}
+										className="input"
+										required
+									>
+										<option value="">Pilih Angkatan</option>
+										{grades
+											.filter((g) => g.isActive)
+											.map((grade) => (
+												<option key={grade.id} value={grade.id}>
+													{grade.name} ({grade.section})
+												</option>
+											))}
+									</select>
+									{grades.length === 0 && (
+										<p className="text-xs text-orange-600 mt-1">
+											⚠️ Belum ada angkatan. Tambahkan di
+											<a
+												href="/settings?tab=grades"
+												className="underline font-semibold"
+											>
+												Pengaturan → Angkatan
+											</a>
+										</p>
+									)}
+								</div>
+							)}
+
+							<div>
+								<label className="block text-sm font-medium mb-2">
+									Mata Pelajaran
+								</label>
+								<select
+									value={formData.subjectId}
+									onChange={(e) =>
+										setFormData({ ...formData, subjectId: e.target.value })
+									}
+									className="input"
+								>
+									<option value="">Pilih Mata Pelajaran</option>
+									{subjects.map((subj) => (
+										<option key={subj.id} value={subj.id}>
+											{subj.name}
+										</option>
+									))}
+								</select>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">
+									Durasi (menit) *
+								</label>
+								<input
+									type="number"
+									value={formData.duration}
+									onChange={(e) =>
+										setFormData({
+											...formData,
+											duration: Number(e.target.value),
+										})
+									}
+									className="input"
+									min={1}
+									required
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">
+									Waktu Mulai *
+								</label>
+								<input
+									type="datetime-local"
+									value={formData.startTime}
+									onChange={(e) =>
+										setFormData({ ...formData, startTime: e.target.value })
+									}
+									className="input"
+									required
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">
+									Waktu Selesai *
+								</label>
+								<input
+									type="datetime-local"
+									value={formData.endTime}
+									onChange={(e) =>
+										setFormData({ ...formData, endTime: e.target.value })
+									}
+									className="input"
+									required
+								/>
+							</div>
+
+							<div className="col-span-2">
+								<label className="flex items-center gap-2">
+									<input
+										type="checkbox"
+										checked={formData.randomizeQuestions}
+										onChange={(e) =>
+											setFormData({
+												...formData,
+												randomizeQuestions: e.target.checked,
+											})
+										}
+										className="rounded"
+									/>
+									<span className="text-sm">Acak urutan soal</span>
+								</label>
+							</div>
+
+							<div className="col-span-2">
+								<label className="flex items-center gap-2">
+									<input
+										type="checkbox"
+										checked={formData.showResultImmediately}
+										onChange={(e) =>
+											setFormData({
+												...formData,
+												showResultImmediately: e.target.checked,
+											})
+										}
+										className="rounded"
+									/>
+									<span className="text-sm">
+										Tampilkan hasil segera setelah selesai
+									</span>
+								</label>
+							</div>
+						</div>
+					</div>
+
+					{/* Questions Section dengan layout seperti edit.tsx */}
+					<div className="grid grid-cols-3 gap-6">
+						{/* Left: Questions List */}
+						<div className="col-span-2">
+							<div className="card">
+								<h2 className="text-xl font-bold mb-4">Daftar Soal</h2>
+
+								{questions.length === 0 ? (
+									<div className="text-center py-8 text-gray-500">
+										Belum ada soal. Klik "Tambah Soal" untuk memulai.
+									</div>
+								) : (
+									<div className="space-y-4">
+										{questions.map((question, idx) => (
+											<div key={idx} className="border rounded-lg p-4">
+												<div className="flex justify-between items-start mb-2">
+													<div className="flex-1">
+														<p className="font-medium">
+															{idx + 1}. {question.questionText}
+														</p>
+														<p className="text-xs text-gray-500 mt-1">
+															Tipe:{" "}
+															{question.type === "multiple_choice"
+																? "Pilihan Ganda"
+																: question.type === "mixed_multiple_choice"
+																? "Pilihan Ganda Majemuk"
+																: question.type === "true_false"
+																? "Benar/Salah"
+																: "Essay"}{" "}
+															| Poin: {question.points}
+														</p>
+													</div>
+													<div className="flex gap-2 ml-4">
+														<button
+															type="button"
+															onClick={() => handleEditQuestion(idx)}
+															className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+														>
+															Detail
+														</button>
+														<button
+															type="button"
+															onClick={() => handleEditQuestion(idx)}
+															className="text-green-600 hover:text-green-800 text-sm font-medium"
+														>
+															Edit
+														</button>
+														<button
+															type="button"
+															onClick={() => {
+																if (confirm("Hapus soal ini?")) {
+																	removeQuestion(idx);
+																}
+															}}
+															className="text-red-600 hover:text-red-800 text-sm font-medium"
+														>
+															Hapus
+														</button>
+													</div>
+												</div>
+
+												{question.imageUrl && (
+													<img
+														src={getImageUrl(question.imageUrl)}
+														alt="Soal"
+														className="mt-3 max-w-xs max-h-40 object-contain rounded"
+													/>
+												)}
+											</div>
+										))}
+									</div>
+								)}
+							</div>
+						</div>
+
+						{/* Right: Summary */}
+						<div>
+							<div className="card sticky top-24">
+								<h3 className="text-lg font-bold mb-4">Ringkasan Soal</h3>
+								<div className="space-y-3 text-sm">
+									<div className="flex justify-between items-center py-2 border-b">
+										<span className="text-gray-600">Total Soal:</span>
+										<span className="font-bold text-lg">
+											{questions.length}
+										</span>
+									</div>
+
+									<div className="space-y-2">
+										<div className="flex justify-between text-gray-600">
+											<span>Pilihan Ganda:</span>
+											<span className="font-medium">
+												{
+													questions.filter((q) => q.type === "multiple_choice")
+														.length
+												}
+											</span>
+										</div>
+										<div className="flex justify-between text-gray-600">
+											<span>Pilihan Ganda Majemuk:</span>
+											<span className="font-medium">
+												{
+													questions.filter(
+														(q) => q.type === "mixed_multiple_choice"
+													).length
+												}
+											</span>
+										</div>
+										<div className="flex justify-between text-gray-600">
+											<span>Benar/Salah:</span>
+											<span className="font-medium">
+												{
+													questions.filter((q) => q.type === "true_false")
+														.length
+												}
+											</span>
+										</div>
+										<div className="flex justify-between text-gray-600">
+											<span>Essay:</span>
+											<span className="font-medium">
+												{questions.filter((q) => q.type === "essay").length}
+											</span>
+										</div>
+									</div>
+
+									<div className="mt-6 pt-4 border-t">
+										<button
+											type="button"
+											onClick={() => {
+												setEditingQuestionIndex(null);
+												setCurrentQuestionForm({
+													questionText: "",
+													type: "multiple_choice",
+													options: ["", "", "", ""],
+													correctAnswer: "",
+													points: 1,
+													imageFile: null,
+													imageUrl: "",
+												});
+												setShowQuestionModal(true);
+											}}
+											className="btn btn-primary w-full"
+										>
+											+ Tambah Soal
+										</button>
+									</div>
+
+									{/* Import buttons */}
+									<div className="mt-4 space-y-2">
+										<button
+											type="button"
+											onClick={() => fileInputRef.current?.click()}
+											className="btn btn-secondary w-full text-sm"
+											disabled={importingQuestions}
+										>
+											{importingQuestions ? "Mengimpor..." : "Import Soal"}
+										</button>
+										<button
+											type="button"
+											onClick={downloadTemplateDoc}
+											className="btn btn-outline w-full text-sm"
+										>
+											Template
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<input
+						type="file"
+						accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+						ref={fileInputRef}
+						onChange={handleImportInputChange}
+						className="hidden"
+					/>
+
+					{showQuestionModal && (
+						<QuestionModal
+							isOpen={showQuestionModal}
+							onClose={() => {
+								setShowQuestionModal(false);
+								setEditingQuestionIndex(null);
+								setCurrentQuestionForm({
+									questionText: "",
+									type: "multiple_choice",
+									options: ["", "", "", ""],
+									correctAnswer: "",
+									points: 1,
+									imageFile: null,
+									imageUrl: "",
+								});
+							}}
+							onSave={handleAddQuestionFromModal}
+							initialData={
+								editingQuestionIndex !== null
+									? questions[editingQuestionIndex]
+									: undefined
+							}
+							isEditing={editingQuestionIndex !== null}
+						/>
+					)}
+
+					<div className="flex justify-end gap-3">
+						<button
+							type="button"
+							onClick={() => router.push("/exams")}
+							className="btn btn-secondary"
+						>
+							Batal
+						</button>
+						<button
+							type="submit"
+							className="btn btn-primary"
+							disabled={loading}
+						>
+							{loading ? "Menyimpan..." : "Simpan Ujian"}
+						</button>
+					</div>
+				</form>
+			</div>
+		</Layout>
+	);
+}

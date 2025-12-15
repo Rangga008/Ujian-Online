@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Template Import Soal - Word</title>
+<style>
+  table { border-collapse: collapse; width: 100%; margin-bottom:20px; }
+  td, th { border: 1px solid #000; padding:8px; vertical-align: top; }
+  .key { width: 20%; font-weight: bold; }
+</style>
+</head>
+<body>
+  <h1>Template Import Soal (Word table)</h1>
+  <p>Gunakan satu tabel per soal. Kolom kiri adalah kunci (Key), kolom kanan adalah nilai (Value).</p>
+
+  <table>
+    <tr><td class="key">Type</td><td>multiple_choice</td></tr>
+    <tr><td class="key">Question</td><td>Siapa proklamator Indonesia?</td></tr>
+    <tr><td class="key">Answers</td><td>
+      <table>
+        <tr><td>A) Soekarno</td></tr>
+        <tr><td>B) Hatta</td></tr>
+        <tr><td>C) Soekarno-Hatta</td></tr>
+        <tr><td>D) BJ Habibie</td></tr>
+      </table>
+    </td></tr>
+    <tr><td class="key">Correct</td><td>C</td></tr>
+    <tr><td class="key">Points</td><td>10</td></tr>
+  </table>
+
+  <table>
+    <tr><td class="key">Type</td><td>true_false</td></tr>
+    <tr><td class="key">Question</td><td>Matahari terbit dari barat.</td></tr>
+    <tr><td class="key">Correct</td><td>Salah</td></tr>
+    <tr><td class="key">Points</td><td>5</td></tr>
+  </table>
+
+  <table>
+    <tr><td class="key">Type</td><td>essay</td></tr>
+    <tr><td class="key">Question</td><td>Jelaskan proses fotosintesis.</td></tr>
+    <tr><td class="key">Points</td><td>15</td></tr>
+  </table>
+
+  <table>
+    <tr><td class="key">Type</td><td>multiple_choice</td></tr>
+    <tr><td class="key">Question</td><td>Perhatikan gambar berikut:<br/><img src="https://via.placeholder.com/300x200.png" alt="contoh"/></td></tr>
+    <tr><td class="key">Answers</td><td>
+      <table>
+        <tr><td>A) Opsi satu</td></tr>
+        <tr><td>B) Opsi dua</td></tr>
+        <tr><td>C) Opsi tiga</td></tr>
+        <tr><td>D) Opsi empat</td></tr>
+      </table>
+    </td></tr>
+    <tr><td class="key">Correct</td><td>A</td></tr>
+    <tr><td class="key">Points</td><td>8</td></tr>
+  </table>
+
+  <p>Catatan: Anda dapat menyisipkan gambar langsung ke sel Question (Word akan embed gambar) atau gunakan URL gambar di dalam sel.</p>
+</body>
+</html>

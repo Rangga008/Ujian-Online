@@ -1,14 +1,18 @@
+import Footer from "./Footer";
+import BottomNav from "./BottomNav";
+import DesktopNav from "./DesktopNav";
 import { useEffect, ReactNode } from "react";
 import { useRouter } from "next/router";
 import { useAuthStore } from "@/store/authStore";
 
 interface LayoutProps {
 	children: ReactNode;
+	logo?: string;
 }
 
-export default function Layout({ children }: LayoutProps) {
+export default function Layout({ children, logo }: LayoutProps) {
 	const router = useRouter();
-	const { user, isAuthenticated, logout, checkAuth } = useAuthStore();
+	const { user, isAuthenticated, checkAuth } = useAuthStore();
 
 	useEffect(() => {
 		checkAuth();
@@ -17,42 +21,18 @@ export default function Layout({ children }: LayoutProps) {
 		}
 	}, [isAuthenticated, router, checkAuth]);
 
-	const handleLogout = () => {
-		logout();
-		router.push("/login");
-	};
-
 	if (!isAuthenticated) return null;
 
 	return (
-		<div className="min-h-screen bg-gray-50">
-			{/* Header */}
-			<header className="bg-white shadow-sm">
-				<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-					<div className="flex items-center justify-between">
-						<div>
-							<h1 className="text-2xl font-bold text-primary-600">
-								Portal Siswa
-							</h1>
-							<p className="text-sm text-gray-600">Sistem Ujian Online</p>
-						</div>
-						<div className="flex items-center gap-4">
-							<div className="text-right">
-								<p className="font-medium text-gray-900">{user?.name}</p>
-								<p className="text-sm text-gray-600">NIS: {user?.nis}</p>
-							</div>
-							<button onClick={handleLogout} className="btn btn-secondary">
-								Logout
-							</button>
-						</div>
-					</div>
-				</div>
-			</header>
+		<div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col overflow-hidden">
+			<DesktopNav />
 
-			{/* Main Content */}
-			<main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-				{children}
+			<main className="flex-1 overflow-x-hidden px-3 sm:px-4 md:px-6 py-4 md:py-6 pb-24 md:pb-8 md:ml-56">
+				<div className="max-w-1xl mx-auto">{children}</div>
 			</main>
+
+			<Footer />
+			<BottomNav />
 		</div>
 	);
 }

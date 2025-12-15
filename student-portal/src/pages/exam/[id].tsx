@@ -3,230 +3,117 @@ import { useRouter } from "next/router";
 import Layout from "@/components/Layout";
 import api from "@/lib/api";
 import toast from "react-hot-toast";
+import { format } from "date-fns";
 
 export default function ExamPage() {
 	const router = useRouter();
 	const { id } = router.query;
 
 	const [exam, setExam] = useState<any>(null);
-	const [submission, setSubmission] = useState<any>(null);
-	const [questions, setQuestions] = useState<any[]>([]);
-	const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-	const [answers, setAnswers] = useState<Record<number, string>>({});
-	const [timeLeft, setTimeLeft] = useState(0);
 	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
-		if (id) {
-			initExam();
-		}
+		if (id) fetchExam();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [id]);
 
-	useEffect(() => {
-		if (timeLeft > 0) {
-			const timer = setInterval(() => {
-				setTimeLeft((prev) => {
-					if (prev <= 1) {
-						handleSubmit();
-						return 0;
-					}
-					return prev - 1;
-				});
-			}, 1000);
-
-			return () => clearInterval(timer);
-		}
-	}, [timeLeft]);
-
-	const initExam = async () => {
+	const fetchExam = async () => {
 		try {
-			const [examRes, questionsRes] = await Promise.all([
-				api.get(`/exams/${id}`),
-				api.get(`/questions/exam/${id}`),
-			]);
-
-			setExam(examRes.data);
-			setQuestions(questionsRes.data);
-
-			// Start submission
-			const submissionRes = await api.post(`/submissions/start/${id}`);
-			setSubmission(submissionRes.data);
-
-			// Calculate time left
-			const duration = examRes.data.duration * 60; // Convert to seconds
-			setTimeLeft(duration);
-
-			setLoading(false);
-		} catch (error: any) {
+			const res = await api.get(`/exams/${id}`);
+			setExam(res.data);
+		} catch (error) {
 			toast.error("Gagal memuat ujian");
 			router.push("/dashboard");
+		} finally {
+			setLoading(false);
 		}
 	};
 
-	const handleAnswer = async (questionId: number, answer: string) => {
-		setAnswers({ ...answers, [questionId]: answer });
-
-		if (submission) {
-			try {
-				await api.post(`/submissions/${submission.id}/answer`, {
-					questionId,
-					answer,
-				});
-			} catch (error) {
-				console.error("Error saving answer:", error);
-			}
-		}
-	};
-
-	const handleSubmit = async () => {
-		if (!submission) return;
-
-		const confirmed = confirm("Yakin ingin mengumpulkan ujian?");
-		if (!confirmed && timeLeft > 0) return;
-
+	const handleStart = async () => {
 		try {
-			await api.post(`/submissions/${submission.id}/submit`);
-			toast.success("Ujian berhasil dikumpulkan!");
-			router.push("/dashboard");
-		} catch (error) {
-			toast.error("Gagal mengumpulkan ujian");
+			const res = await api.post(`/submissions/start/${id}`);
+			const sub = res.data;
+			router.push(`/exam/${id}/take?submissionId=${sub.id}`);
+		} catch (err: any) {
+			const msg = err?.response?.data?.message || "Gagal memulai ujian";
+			toast.error(msg);
 		}
-	};
-
-	const formatTime = (seconds: number) => {
-		const mins = Math.floor(seconds / 60);
-		const secs = seconds % 60;
-		return `${mins.toString().padStart(2, "0")}:${secs
-			.toString()
-			.padStart(2, "0")}`;
 	};
 
 	if (loading) {
 		return (
 			<Layout>
 				<div className="flex items-center justify-center h-64">
-					<div className="text-xl">Loading...</div>
+					<div className="text-xl">Memuat informasi ujian...</div>
 				</div>
 			</Layout>
 		);
 	}
 
-	const currentQuestion = questions[currentQuestionIndex];
+	if (!exam) {
+		return (
+			<Layout>
+				<div className="flex items-center justify-center h-64">
+					<div className="text-gray-600">Ujian tidak ditemukan.</div>
+				</div>
+			</Layout>
+		);
+	}
 
 	return (
 		<Layout>
-			<div className="max-w-4xl mx-auto">
-				{/* Header */}
-				<div className="card mb-6">
-					<div className="flex items-center justify-between">
+			<div className="max-w-3xl mx-auto space-y-6">
+				<div className="rounded-2xl bg-white p-6 shadow">
+					<h1 className="text-2xl font-bold">{exam.title}</h1>
+					<p className="text-sm text-gray-600 mt-2">
+						{exam.description || "-"}
+					</p>
+
+					<div className="mt-4 grid grid-cols-2 gap-3 text-sm text-gray-700">
 						<div>
-							<h1 className="text-2xl font-bold text-gray-900">{exam.title}</h1>
-							<p className="text-gray-600">
-								Soal {currentQuestionIndex + 1} dari {questions.length}
-							</p>
+							<div className="text-xs text-gray-500">Durasi</div>
+							<div className="font-medium">{exam.duration ?? "-"} menit</div>
 						</div>
-						<div className="text-right">
-							<div
-								className={`text-3xl font-bold ${
-									timeLeft < 300 ? "text-red-600" : "text-primary-600"
-								}`}
-							>
-								{formatTime(timeLeft)}
+						<div>
+							<div className="text-xs text-gray-500">Soal</div>
+							<div className="font-medium">
+								{exam.totalQuestions ?? "-"} soal
 							</div>
-							<p className="text-sm text-gray-600">Waktu Tersisa</p>
+						</div>
+						<div>
+							<div className="text-xs text-gray-500">Periode</div>
+							<div className="font-medium">
+								{format(new Date(exam.startTime), "dd MMM yyyy HH:mm")} -{" "}
+								{format(new Date(exam.endTime), "HH:mm")}
+							</div>
+						</div>
+						<div>
+							<div className="text-xs text-gray-500">Tampilkan hasil</div>
+							<div className="font-medium">
+								{exam.showResultImmediately ? "Langsung" : "Setelah dinilai"}
+							</div>
 						</div>
 					</div>
-				</div>
 
-				{/* Question */}
-				<div className="card mb-6">
-					<div className="mb-6">
-						<div className="flex items-center gap-2 mb-4">
-							<span className="bg-primary-100 text-primary-800 px-3 py-1 rounded-full text-sm font-medium">
-								Soal {currentQuestionIndex + 1}
-							</span>
-							<span className="text-gray-600 text-sm">
-								({currentQuestion.points} poin)
-							</span>
-						</div>
-						<p className="text-lg text-gray-900 leading-relaxed">
-							{currentQuestion.questionText}
-						</p>
+					<div className="mt-6 border-t pt-4">
+						<h3 className="font-semibold">Persiapan & Aturan</h3>
+						<ul className="list-disc list-inside mt-2 text-sm text-gray-700 space-y-1">
+							<li>Siapkan alat tulis jika diperlukan.</li>
+							<li>Pastikan koneksi internet stabil.</li>
+							<li>Jangan refresh atau tutup browser selama ujian.</li>
+							<li>Setelah dikumpulkan, jawaban tidak bisa diubah.</li>
+							<li>Jika ada gambar soal, tampil di halaman ujian.</li>
+						</ul>
 					</div>
 
-					{/* Options */}
-					<div className="space-y-3">
-						{currentQuestion.options?.map((option: string, index: number) => (
-							<label
-								key={index}
-								className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-colors ${
-									answers[currentQuestion.id] === option
-										? "border-primary-500 bg-primary-50"
-										: "border-gray-200 hover:border-primary-300"
-								}`}
-							>
-								<input
-									type="radio"
-									name={`question-${currentQuestion.id}`}
-									value={option}
-									checked={answers[currentQuestion.id] === option}
-									onChange={(e) =>
-										handleAnswer(currentQuestion.id, e.target.value)
-									}
-									className="w-5 h-5 text-primary-600"
-								/>
-								<span className="ml-3 text-gray-900">{option}</span>
-							</label>
-						))}
-					</div>
-				</div>
-
-				{/* Navigation */}
-				<div className="flex items-center justify-between">
-					<button
-						onClick={() =>
-							setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))
-						}
-						disabled={currentQuestionIndex === 0}
-						className="btn btn-secondary disabled:opacity-50"
-					>
-						← Sebelumnya
-					</button>
-
-					<div className="flex gap-2">
-						{questions.map((_, index) => (
-							<button
-								key={index}
-								onClick={() => setCurrentQuestionIndex(index)}
-								className={`w-10 h-10 rounded-lg font-medium ${
-									index === currentQuestionIndex
-										? "bg-primary-600 text-white"
-										: answers[questions[index].id]
-										? "bg-green-100 text-green-800"
-										: "bg-gray-200 text-gray-600"
-								}`}
-							>
-								{index + 1}
-							</button>
-						))}
-					</div>
-
-					{currentQuestionIndex === questions.length - 1 ? (
-						<button onClick={handleSubmit} className="btn btn-success">
-							Kumpulkan Ujian
-						</button>
-					) : (
+					<div className="mt-6 flex justify-end">
 						<button
-							onClick={() =>
-								setCurrentQuestionIndex(
-									Math.min(questions.length - 1, currentQuestionIndex + 1)
-								)
-							}
-							className="btn btn-primary"
+							onClick={handleStart}
+							className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
 						>
-							Selanjutnya →
+							Mulai Ujian
 						</button>
-					)}
+					</div>
 				</div>
 			</div>
 		</Layout>

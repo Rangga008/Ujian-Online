@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Head from "next/head";
 import Layout from "@/components/Layout";
 import api from "@/lib/api";
 import Link from "next/link";
@@ -73,7 +74,7 @@ export default function DashboardPage() {
 
 	if (loading) {
 		return (
-			<Layout>
+			<Layout title="Dashboard">
 				<div className="flex items-center justify-center h-64">
 					<div className="text-xl">Loading...</div>
 				</div>
@@ -82,12 +83,17 @@ export default function DashboardPage() {
 	}
 
 	return (
-		<Layout>
-			<div>
-				<h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard</h1>
+		<Layout title="Dashboard">
+			<Head>
+				<title>Dashboard - Admin Panel</title>
+			</Head>
+			<div className="px-2 sm:px-0">
+				<h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 sm:mb-8">
+					Dashboard
+				</h1>
 
 				{/* Stats Cards */}
-				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
 					{statCards.map((stat) => (
 						<div key={stat.label} className="card">
 							<div className="flex items-center justify-between">

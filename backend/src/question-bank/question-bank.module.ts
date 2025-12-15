@@ -5,9 +5,13 @@ import { QuestionBankController } from "./question-bank.controller";
 import { QuestionBankService } from "./question-bank.service";
 import { Subject } from "../subjects/subject.entity";
 import { User } from "../users/user.entity";
+import { ActivityModule } from "../activity/activity.module";
 
 @Module({
-	imports: [TypeOrmModule.forFeature([QuestionBank, Subject, User])],
+	imports: [
+		TypeOrmModule.forFeature([QuestionBank, Subject, User]),
+		ActivityModule,
+	],
 	controllers: [QuestionBankController],
 	providers: [QuestionBankService],
 	exports: [QuestionBankService],

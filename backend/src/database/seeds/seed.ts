@@ -1,5 +1,6 @@
 import { DataSource } from "typeorm";
 import * as bcrypt from "bcrypt";
+import "dotenv/config";
 import { User, UserRole } from "../../users/user.entity";
 import { Student, Gender } from "../../students/student.entity";
 import { Exam, ExamStatus } from "../../exams/exam.entity";
@@ -14,14 +15,16 @@ import {
 	DifficultyLevel,
 } from "../../question-bank/question-bank.entity";
 import { Setting } from "../../settings/setting.entity";
+import { TeacherAssignment } from "../../teacher-assignments/teacher-assignment.entity";
+import { Grade } from "../../grades/grade.entity";
 
 const AppDataSource = new DataSource({
 	type: "mysql",
-	host: process.env.DB_HOST || "localhost",
-	port: parseInt(process.env.DB_PORT || "3306"),
-	username: process.env.DB_USERNAME || "root",
-	password: process.env.DB_PASSWORD || "",
-	database: process.env.DB_DATABASE || "ujian_online",
+	host: process.env.DB_HOST, // no fallback!
+	port: Number(process.env.DB_PORT),
+	username: process.env.DB_USERNAME,
+	password: process.env.DB_PASSWORD,
+	database: process.env.DB_DATABASE,
 	entities: [
 		User,
 		Student,
@@ -34,6 +37,8 @@ const AppDataSource = new DataSource({
 		Class,
 		QuestionBank,
 		Setting,
+		TeacherAssignment,
+		Grade,
 	],
 	synchronize: true,
 });
@@ -56,21 +61,31 @@ async function seed() {
 		const settingRepo = AppDataSource.getRepository(Setting);
 
 		// Clear existing data (order matters due to foreign keys)
-		console.log("Clearing existing data...");
-		await AppDataSource.query("SET FOREIGN_KEY_CHECKS = 0");
-		await AppDataSource.query("DELETE FROM `answers`");
-		await AppDataSource.query("DELETE FROM `submissions`");
-		await AppDataSource.query("DELETE FROM `question_bank`");
-		await AppDataSource.query("DELETE FROM `questions`");
-		await AppDataSource.query("DELETE FROM `exams`");
-		await AppDataSource.query("DELETE FROM `students`");
-		await AppDataSource.query("DELETE FROM `users`");
-		await AppDataSource.query("DELETE FROM `classes`");
-		await AppDataSource.query("DELETE FROM `subjects`");
-		await AppDataSource.query("DELETE FROM `semesters`");
-		await AppDataSource.query("DELETE FROM `settings`");
-		await AppDataSource.query("SET FOREIGN_KEY_CHECKS = 1");
-		console.log("Existing data cleared");
+		// Only purge when explicitly requested
+		const shouldPurge = process.env.SEED_PURGE === "true";
+		if (shouldPurge) {
+			console.log("Purging existing data (SEED_PURGE=true)...");
+			await AppDataSource.query("SET FOREIGN_KEY_CHECKS = 0");
+			await AppDataSource.query("DELETE FROM `answers`");
+			await AppDataSource.query("DELETE FROM `submissions`");
+			await AppDataSource.query("DELETE FROM `question_bank`");
+			await AppDataSource.query("DELETE FROM `questions`");
+			await AppDataSource.query("DELETE FROM `exams`");
+			await AppDataSource.query("DELETE FROM `students`");
+			await AppDataSource.query("DELETE FROM `users`");
+			await AppDataSource.query("DELETE FROM `teacher_assignments`");
+			await AppDataSource.query("DELETE FROM `class_teachers`");
+			await AppDataSource.query("DELETE FROM `class_subjects`");
+			await AppDataSource.query("DELETE FROM `classes`");
+			await AppDataSource.query("DELETE FROM `subjects`");
+			await AppDataSource.query("DELETE FROM `semesters`");
+			await AppDataSource.query("DELETE FROM `settings`");
+			await AppDataSource.query("DELETE FROM `grades`");
+			await AppDataSource.query("SET FOREIGN_KEY_CHECKS = 1");
+			console.log("Existing data cleared");
+		} else {
+			console.log("Skipping purge. Set SEED_PURGE=true to clear data.");
+		}
 
 		// Initialize Settings
 		const defaultSettings = [
@@ -207,6 +222,58 @@ async function seed() {
 			await settingRepo.save(setting);
 		}
 		console.log("Settings initialized");
+
+		// Create Grades (SD, SMP, SMA)
+		const gradeRepo = AppDataSource.getRepository(Grade);
+		const grades: Array<Partial<Grade>> = [
+			// SD (Sekolah Dasar) - Kelas 1-6
+			{ level: 1, name: "Kelas 1 SD", section: "SD" as const, isActive: true },
+			{ level: 2, name: "Kelas 2 SD", section: "SD" as const, isActive: true },
+			{ level: 3, name: "Kelas 3 SD", section: "SD" as const, isActive: true },
+			{ level: 4, name: "Kelas 4 SD", section: "SD" as const, isActive: true },
+			{ level: 5, name: "Kelas 5 SD", section: "SD" as const, isActive: true },
+			{ level: 6, name: "Kelas 6 SD", section: "SD" as const, isActive: true },
+			// SMP (Sekolah Menengah Pertama) - Kelas 7-9
+			{
+				level: 7,
+				name: "Kelas 7 SMP",
+				section: "SMP" as const,
+				isActive: true,
+			},
+			{
+				level: 8,
+				name: "Kelas 8 SMP",
+				section: "SMP" as const,
+				isActive: true,
+			},
+			{
+				level: 9,
+				name: "Kelas 9 SMP",
+				section: "SMP" as const,
+				isActive: true,
+			},
+			// SMA (Sekolah Menengah Atas) - Kelas 10-12
+			{
+				level: 10,
+				name: "Kelas 10 SMA",
+				section: "SMA" as const,
+				isActive: true,
+			},
+			{
+				level: 11,
+				name: "Kelas 11 SMA",
+				section: "SMA" as const,
+				isActive: true,
+			},
+			{
+				level: 12,
+				name: "Kelas 12 SMA",
+				section: "SMA" as const,
+				isActive: true,
+			},
+		];
+		await gradeRepo.save(grades);
+		console.log("Grades initialized (SD, SMP, SMA)");
 
 		// Create Semesters (multiple academic years)
 		const semesters = [
@@ -442,23 +509,60 @@ async function seed() {
 		}
 		console.log("Teachers created");
 
-		// Assign teachers to subjects
+		// Assign teachers to subjects (legacy mapping kept for compatibility)
 		savedSubjects[0].teachers = [savedTeachers[0]]; // Matematika
 		savedSubjects[1].teachers = [savedTeachers[1]]; // Bahasa Indonesia
 		savedSubjects[2].teachers = [savedTeachers[2]]; // Bahasa Inggris
 		await subjectRepo.save(savedSubjects);
 
-		// Assign teachers to classes
-		savedClasses[0].teachers = [savedTeachers[0]]; // 10 IPA 1
-		savedClasses[1].teachers = [savedTeachers[0]]; // 10 IPA 2
-		savedClasses[3].teachers = [savedTeachers[0]]; // 11 IPA 1
-		savedClasses[4].teachers = [savedTeachers[0]]; // 11 IPA 2
-		savedClasses[6].teachers = [savedTeachers[0]]; // 12 IPA 1
-		savedClasses[7].teachers = [savedTeachers[0]]; // 12 IPA 2
-		savedClasses[2].teachers = [savedTeachers[1]]; // 10 IPS 1
-		savedClasses[5].teachers = [savedTeachers[1]]; // 11 IPS 1
-		savedClasses[8].teachers = [savedTeachers[1]]; // 12 IPS 1
+		// Assign subjects to classes based on major (so classes have subjects mapped)
+		for (const cls of savedClasses) {
+			if (cls.major && cls.major.toUpperCase().includes("IPA")) {
+				// IPA: Matematika + Bahasa Inggris
+				cls.subjects = [savedSubjects[0], savedSubjects[2]];
+			} else if (cls.major && cls.major.toUpperCase().includes("IPS")) {
+				// IPS: Bahasa Indonesia + Bahasa Inggris
+				cls.subjects = [savedSubjects[1], savedSubjects[2]];
+			} else {
+				// default: all subjects
+				cls.subjects = savedSubjects;
+			}
+		}
 		await classRepo.save(savedClasses);
+
+		// Create semester-aware teacher assignments (new structure)
+		const teacherAssignmentRepo =
+			AppDataSource.getRepository(TeacherAssignment);
+		const teacherAssignments: TeacherAssignment[] = [];
+
+		// Map teachers to classes similarly to previous mapping but using TeacherAssignment
+		const mapTeacherToClass = (
+			teacherIndex: number,
+			classIndexes: number[]
+		) => {
+			for (const ci of classIndexes) {
+				const ta = new TeacherAssignment();
+				ta.teacher = savedTeachers[teacherIndex];
+				ta.cls = savedClasses[ci];
+				ta.semester = activeSemester;
+				teacherAssignments.push(ta);
+			}
+		};
+
+		// Teacher 0 (Matematika) teaches IPA classes
+		mapTeacherToClass(0, [0, 1, 3, 4, 6, 7]);
+		// Teacher 1 (Bahasa Indonesia) teaches IPS classes
+		mapTeacherToClass(1, [2, 5, 8]);
+		// Teacher 2 (Bahasa Inggris) assigned to all classes as supporting subject
+		for (let i = 0; i < savedClasses.length; i++) {
+			const ta = new TeacherAssignment();
+			ta.teacher = savedTeachers[2];
+			ta.cls = savedClasses[i];
+			ta.semester = activeSemester;
+			teacherAssignments.push(ta);
+		}
+
+		await teacherAssignmentRepo.save(teacherAssignments as any);
 
 		// Create Student Users (accounts only, no personal data) - More students
 		const hashedStudentPassword = await bcrypt.hash("siswa123", 10);
@@ -666,6 +770,7 @@ async function seed() {
 		for (let i = 0; i < savedStudentUsers.length; i++) {
 			const student = studentRepo.create({
 				userId: savedStudentUsers[i].id,
+				user: savedStudentUsers[i],
 				semesterId: activeSemester.id,
 				name: studentNames[i].name,
 				classId: classDistribution[i],

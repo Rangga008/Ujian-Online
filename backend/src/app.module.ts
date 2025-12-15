@@ -12,8 +12,10 @@ import { SemestersModule } from "./semesters/semester.module";
 import { SubjectsModule } from "./subjects/subject.module";
 import { ClassesModule } from "./classes/class.module";
 import { QuestionBankModule } from "./question-bank/question-bank.module";
+import { ActivityModule } from "./activity/activity.module";
 import { SettingsModule } from "./settings/settings.module";
 import { StudentsModule } from "./students/students.module";
+import { GradesModule } from "./grades/grades.module";
 
 @Module({
 	imports: [
@@ -26,18 +28,18 @@ import { StudentsModule } from "./students/students.module";
 		}),
 		TypeOrmModule.forRootAsync({
 			imports: [ConfigModule],
-			useFactory: (configService: ConfigService) => ({
+			inject: [ConfigService],
+			useFactory: (config: ConfigService) => ({
 				type: "mysql",
-				host: configService.get("DB_HOST", "localhost"),
-				port: configService.get("DB_PORT", 3306),
-				username: configService.get("DB_USERNAME", "root"),
-				password: configService.get("DB_PASSWORD", ""),
-				database: configService.get("DB_DATABASE", "ujian_online"),
+				host: config.get<string>("DB_HOST"),
+				port: config.get<number>("DB_PORT", 3306),
+				username: config.get<string>("DB_USERNAME"),
+				password: config.get<string>("DB_PASSWORD"),
+				database: config.get<string>("DB_DATABASE"),
 				entities: [__dirname + "/**/*.entity{.ts,.js}"],
-				synchronize: true, // Set to false in production
+				synchronize: config.get<string>("DB_SYNCHRONIZE", "false") === "true",
 				logging: false,
 			}),
-			inject: [ConfigService],
 		}),
 		AuthModule,
 		UsersModule,
@@ -48,8 +50,10 @@ import { StudentsModule } from "./students/students.module";
 		SubjectsModule,
 		ClassesModule,
 		QuestionBankModule,
+		ActivityModule,
 		SettingsModule,
 		StudentsModule,
+		GradesModule,
 	],
 })
 export class AppModule {}

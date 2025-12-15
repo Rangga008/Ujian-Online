@@ -1,0 +1,190 @@
+import { Question } from "@/types/exam";
+import { getImageUrl } from "@/lib/imageUrl";
+import { useState, useEffect } from "react";
+
+interface QuestionListProps {
+	questions: Question[];
+	onEdit: (index: number) => void;
+	onDelete: (index: number) => void;
+}
+
+export default function QuestionList({
+	questions,
+	onEdit,
+	onDelete,
+}: QuestionListProps) {
+	if (questions.length === 0) {
+		return (
+			<div className="card">
+				<div className="text-center py-8 text-gray-500">
+					Belum ada soal. Klik "Tambah Soal" untuk memulai.
+				</div>
+			</div>
+		);
+	}
+
+	const getQuestionImageSrc = (question: Question) => {
+		// If there's a local file, use FileReader preview
+		if (question.imageFile) {
+			// Convert File to Data URL for preview
+			// Note: This is a quick workaround; for production use FileReader with state
+			return URL.createObjectURL(question.imageFile);
+		}
+		// Otherwise use imageUrl from database
+		if (question.imageUrl) {
+			return getImageUrl(question.imageUrl);
+		}
+		return null;
+	};
+
+	const getQuestionTypeLabel = (type: string) => {
+		const labels: Record<string, string> = {
+			multiple_choice: "Pilihan Ganda",
+			mixed_multiple_choice: "Pilihan Ganda Majemuk",
+			true_false: "Benar/Salah",
+			essay: "Essay",
+		};
+		return labels[type] || type;
+	};
+
+	return (
+		<div className="card">
+			<h2 className="text-xl font-bold mb-4">Daftar Soal</h2>
+			<div className="space-y-4">
+				{questions.map((question, idx) => (
+					<div key={idx} className="border rounded-lg p-4">
+						<div className="flex justify-between items-start mb-2">
+							<div className="flex-1">
+								<p className="font-medium">
+									{idx + 1}. {question.questionText}
+								</p>
+								<p className="text-xs text-gray-500 mt-1">
+									Tipe: {getQuestionTypeLabel(question.type)} | Poin:{" "}
+									{question.points}
+								</p>
+							</div>
+							<div className="flex gap-2 ml-4">
+								<button
+									type="button"
+									onClick={() => onEdit(idx)}
+									className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+								>
+									Detail
+								</button>
+								<button
+									type="button"
+									onClick={() => onEdit(idx)}
+									className="text-green-600 hover:text-green-800 text-sm font-medium"
+								>
+									Edit
+								</button>
+								<button
+									type="button"
+									onClick={() => {
+										if (confirm("Hapus soal ini?")) {
+											onDelete(idx);
+										}
+									}}
+									className="text-red-600 hover:text-red-800 text-sm font-medium"
+								>
+									Hapus
+								</button>
+							</div>
+						</div>
+
+						{question.imageUrl || question.imageFile ? (
+							<div className="mt-2">
+								<img
+									src={getQuestionImageSrc(question) || ""}
+									alt="Gambar soal"
+									className="max-w-xs max-h-48 object-contain rounded border"
+								/>
+							</div>
+						) : null}
+
+						{/* Display Options and Correct Answer */}
+						{question.type !== "essay" && question.options && (
+							<div className="mt-3 space-y-1">
+								{question.options.map((option: string, optIdx: number) => {
+									let isCorrect = false;
+									const normalize = (s: any) => (s || "").toString().trim();
+
+									if (question.type === "mixed_multiple_choice") {
+										const caRaw = normalize(question.correctAnswer);
+										if (!caRaw) {
+											isCorrect = false;
+										} else {
+											// Prefer splitting on commas/semicolons/pipes/slashes to keep option texts intact
+											let parts = caRaw
+												.split(/[;,|\/]+/)
+												.map((p: string) => p.trim())
+												.filter(Boolean);
+
+											// If no separators found but looks like letter tokens separated by spaces ("C A"), split by whitespace
+											if (parts.length === 0) {
+												const raw = caRaw.trim();
+												if (/^[A-Za-z](?:\s+[A-Za-z])+$/.test(raw)) {
+													parts = raw
+														.split(/\s+/)
+														.map((p: string) => p.trim())
+														.filter(Boolean);
+												} else if (raw) {
+													parts = [raw];
+												}
+											}
+
+											if (
+												parts.length > 0 &&
+												parts.every((p: string) => /^\d+$/.test(p))
+											) {
+												const idxs = parts.map((p: string) => Number(p));
+												isCorrect = idxs.includes(optIdx);
+											} else if (
+												parts.length > 0 &&
+												parts.every((p: string) => /^[A-Za-z]$/.test(p))
+											) {
+												const idxs = parts.map(
+													(p: string) => p.toUpperCase().charCodeAt(0) - 65
+												);
+												isCorrect = idxs.includes(optIdx);
+											} else {
+												const optText = normalize(option);
+												const normalizeText = (s: string) =>
+													(s || "")
+														.toString()
+														.replace(/\s+/g, " ")
+														.trim()
+														.toLowerCase();
+												isCorrect = parts.some((p: string) => {
+													const pp = p.replace(/^\s*[A-Za-z]\.\s*/, "").trim();
+													return normalizeText(pp) === normalizeText(optText);
+												});
+											}
+										}
+									} else {
+										isCorrect =
+											normalize(question.correctAnswer) === normalize(option);
+									}
+
+									return (
+										<div
+											key={optIdx}
+											className={`text-sm ${
+												isCorrect
+													? "text-green-600 font-medium"
+													: "text-gray-600"
+											}`}
+										>
+											{String.fromCharCode(65 + optIdx)}. {option}
+											{isCorrect && <span className="ml-2">✓</span>}
+										</div>
+									);
+								})}
+							</div>
+						)}
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}

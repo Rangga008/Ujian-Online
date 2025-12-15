@@ -31,10 +31,7 @@ export interface UpdateSettingDto {
 }
 
 export interface BulkUpdateSettingsDto {
-	settings: Array<{
-		key: string;
-		value: string;
-	}>;
+	settings: Record<string, string>;
 }
 
 const settingsApi = {
@@ -44,8 +41,8 @@ const settingsApi = {
 		return response.data;
 	},
 
-	// Get public settings (no auth required)
-	getPublic: async (): Promise<Setting[]> => {
+	// Get public settings (no auth required) - returns object, not array
+	getPublic: async (): Promise<Record<string, any>> => {
 		const response = await api.get("/settings/public");
 		return response.data;
 	},
@@ -73,7 +70,7 @@ const settingsApi = {
 		key: string,
 		data: UpdateSettingDto
 	): Promise<Setting> => {
-		const response = await api.patch(`/settings/${key}`, data);
+		const response = await api.patch(`/settings/key/${key}`, data);
 		return response.data;
 	},
 

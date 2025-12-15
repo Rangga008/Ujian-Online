@@ -254,7 +254,7 @@ export default function ExamSchedulePage() {
 	};
 
 	return (
-		<Layout>
+		<Layout title="Jadwal Ujian">
 			<div>
 				<div className="mb-4">
 					<ActiveSemesterBanner />

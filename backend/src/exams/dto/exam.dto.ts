@@ -7,6 +7,8 @@ import {
 	IsBoolean,
 	IsArray,
 	ValidateNested,
+	Min,
+	IsNotEmpty,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { ExamStatus, ExamTargetType } from "../exam.entity";
@@ -14,34 +16,44 @@ import { QuestionType } from "../../questions/question.entity";
 
 export class CreateQuestionDto {
 	@IsString()
+	@IsNotEmpty({ message: "Question text is required" })
 	questionText: string;
 
-	@IsEnum(QuestionType)
+	@IsEnum(QuestionType, { message: "Invalid question type" })
 	type: QuestionType;
 
 	@IsOptional()
 	@IsArray()
 	options?: string[];
 
+	@IsOptional()
 	@IsString()
-	correctAnswer: string;
+	correctAnswer?: string;
 
 	@IsNumber()
+	@Min(1, { message: "Points must be at least 1" })
 	points: number;
 
 	@IsOptional()
 	@IsNumber()
 	orderIndex?: number;
+
+	@IsOptional()
+	@IsString()
+	imageUrl?: string;
 }
 
 export class CreateExamDto {
 	@IsString()
+	@IsNotEmpty({ message: "Judul ujian harus diisi" })
 	title: string;
 
 	@IsString()
+	@IsNotEmpty({ message: "Deskripsi ujian harus diisi" })
 	description: string;
 
 	@IsNumber()
+	@Min(1, { message: "Durasi minimal 1 menit" })
 	duration: number;
 
 	@Type(() => Date)
@@ -89,6 +101,10 @@ export class CreateExamDto {
 	subjectId?: number;
 
 	@IsOptional()
+	@IsString()
+	imageUrl?: string;
+
+	@IsOptional()
 	@IsArray()
 	@ValidateNested({ each: true })
 	@Type(() => CreateQuestionDto)
@@ -98,6 +114,7 @@ export class CreateExamDto {
 export class UpdateExamDto {
 	@IsOptional()
 	@IsString()
+	@IsNotEmpty({ message: "Judul ujian harus diisi" })
 	title?: string;
 
 	@IsOptional()
@@ -106,6 +123,7 @@ export class UpdateExamDto {
 
 	@IsOptional()
 	@IsNumber()
+	@Min(1, { message: "Durasi minimal 1 menit" })
 	duration?: number;
 
 	@IsOptional()
@@ -125,6 +143,10 @@ export class UpdateExamDto {
 	@IsOptional()
 	@IsNumber()
 	totalScore?: number;
+
+	@IsOptional()
+	@IsNumber()
+	totalQuestions?: number;
 
 	@IsOptional()
 	@IsBoolean()
@@ -153,4 +175,14 @@ export class UpdateExamDto {
 	@IsOptional()
 	@IsNumber()
 	subjectId?: number;
+
+	@IsOptional()
+	@IsString()
+	imageUrl?: string;
+
+	@IsOptional()
+	@IsArray()
+	@ValidateNested({ each: true })
+	@Type(() => CreateQuestionDto)
+	questions?: CreateQuestionDto[];
 }
