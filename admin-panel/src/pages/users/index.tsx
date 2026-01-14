@@ -21,6 +21,7 @@ interface User {
 	nip?: string;
 	activeStudent?: {
 		id: number;
+		name: string;
 		classId: number | null;
 		class: Class | null;
 	} | null;
@@ -63,6 +64,7 @@ export default function UsersPage() {
 		role: "student",
 		nis: "",
 		nip: "",
+		studentName: "",
 	});
 
 	useEffect(() => {
@@ -71,10 +73,25 @@ export default function UsersPage() {
 		fetchActiveSemester();
 	}, []);
 
+	// Reset to page 1 when search or role filter changes
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [searchQuery, selectedRole]);
+
 	const fetchUsers = async () => {
 		try {
 			const response = await api.get("/users");
-			setUsers(response.data);
+			// Add activeStudent property by finding the student record with active semester
+			const usersWithActiveStudent = response.data.map((user: any) => {
+				const activeStudent = user.students?.find(
+					(s: any) => s.semester?.isActive
+				);
+				return {
+					...user,
+					activeStudent,
+				};
+			});
+			setUsers(usersWithActiveStudent);
 		} catch (error) {
 			toast.error("Gagal memuat data pengguna");
 		} finally {
@@ -110,6 +127,7 @@ export default function UsersPage() {
 				role: user.role,
 				nis: user.nis || "",
 				nip: user.nip || "",
+				studentName: user.activeStudent?.name || "",
 			});
 		} else {
 			setEditingUser(null);
@@ -120,6 +138,7 @@ export default function UsersPage() {
 				role: "student",
 				nis: "",
 				nip: "",
+				studentName: "",
 			});
 		}
 		setShowModal(true);
@@ -135,6 +154,7 @@ export default function UsersPage() {
 			role: "student",
 			nis: "",
 			nip: "",
+			studentName: "",
 		});
 	};
 
@@ -143,12 +163,19 @@ export default function UsersPage() {
 		try {
 			const payload: any = {
 				name: formData.name,
-				email: formData.email,
 				role: formData.role,
 			};
 
+			// Only include email if it has a value
+			if (formData.email) {
+				payload.email = formData.email;
+			}
+
 			if (formData.role === "student") {
 				payload.nis = formData.nis;
+				if (formData.studentName) {
+					payload.studentName = formData.studentName;
+				}
 			}
 			if (formData.role === "teacher") {
 				payload.nip = formData.nip;
@@ -245,6 +272,10 @@ export default function UsersPage() {
 			);
 		}
 	};
+	// Reset to page 1 when search or role filter changes
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [searchQuery, selectedRole]);
 
 	const allFilteredUsers = users
 		.filter((user) =>
@@ -254,10 +285,10 @@ export default function UsersPage() {
 			if (!searchQuery.trim()) return true;
 			const query = searchQuery.toLowerCase();
 			return (
-				user.name.toLowerCase().includes(query) ||
-				user.email.toLowerCase().includes(query) ||
-				(user.nis && user.nis.toLowerCase().includes(query)) ||
-				(user.nip && user.nip.toLowerCase().includes(query))
+				(user?.name ? user.name.toLowerCase().includes(query) : false) ||
+				(user?.email ? user.email.toLowerCase().includes(query) : false) ||
+				(user?.nis ? user.nis.toLowerCase().includes(query) : false) ||
+				(user?.nip ? user.nip.toLowerCase().includes(query) : false)
 			);
 		});
 
@@ -355,7 +386,11 @@ export default function UsersPage() {
 							<tbody>
 								{paginatedUsers.map((user) => (
 									<tr key={user.id} className="border-b hover:bg-gray-50">
-										<td className="p-4 font-medium">{user.name}</td>
+										<td className="p-4 font-medium">
+											{user.name ||
+												(user.role === "student" && user.activeStudent?.name) ||
+												"-"}
+										</td>
 										<td className="p-4">{user.email}</td>
 										<td className="p-4">
 											<span
@@ -377,19 +412,11 @@ export default function UsersPage() {
 										<td className="p-4">{user.nis || user.nip || "-"}</td>
 										<td className="p-4">
 											{user.role === "student" && user.activeStudent ? (
-												<div className="flex items-center gap-2">
-													<span>
-														{user.activeStudent.class
-															? `${user.activeStudent.class.name} - ${user.activeStudent.class.major}`
-															: "Belum ada kelas"}
-													</span>
-													<button
-														onClick={() => handleOpenAssignModal(user)}
-														className="text-blue-600 hover:text-blue-700 text-sm"
-													>
-														Assign
-													</button>
-												</div>
+												<span>
+													{user.activeStudent.class
+														? `${user.activeStudent.class.name} - ${user.activeStudent.class.major}`
+														: "Belum ada kelas"}
+												</span>
 											) : (
 												"-"
 											)}
@@ -445,7 +472,26 @@ export default function UsersPage() {
 								{editingUser ? "Edit Pengguna" : "Tambah Pengguna Baru"}
 							</h2>
 							<form onSubmit={handleSubmit} className="space-y-4">
-								<div className="grid grid-cols-2 gap-4">
+								{formData.role === "student" ? (
+									<div>
+										<label className="block text-sm font-medium mb-2">
+											Nama Siswa (Nama Sebenarnya)
+										</label>
+										<input
+											type="text"
+											value={formData.studentName}
+											onChange={(e) =>
+												setFormData({
+													...formData,
+													studentName: e.target.value,
+												})
+											}
+											className="input"
+											placeholder="Contoh: Budi Satoso"
+											required
+										/>
+									</div>
+								) : (
 									<div>
 										<label className="block text-sm font-medium mb-2">
 											Nama
@@ -460,9 +506,14 @@ export default function UsersPage() {
 											required
 										/>
 									</div>
+								)}
+								<div className="grid grid-cols-2 gap-4">
 									<div>
 										<label className="block text-sm font-medium mb-2">
-											Email
+											Email{" "}
+											{(formData.role === "teacher" ||
+												formData.role === "student") &&
+												"(Opsional)"}
 										</label>
 										<input
 											type="email"
@@ -471,11 +522,9 @@ export default function UsersPage() {
 												setFormData({ ...formData, email: e.target.value })
 											}
 											className="input"
-											required
+											required={formData.role === "admin"}
 										/>
 									</div>
-								</div>
-								<div className="grid grid-cols-2 gap-4">
 									<div>
 										<label className="block text-sm font-medium mb-2">
 											Role
@@ -493,6 +542,8 @@ export default function UsersPage() {
 											<option value="admin">Admin</option>
 										</select>
 									</div>
+								</div>
+								<div className="grid grid-cols-2 gap-4">
 									{!editingUser && (
 										<div>
 											<label className="block text-sm font-medium mb-2">
@@ -510,39 +561,41 @@ export default function UsersPage() {
 											/>
 										</div>
 									)}
-								</div>{" "}
-								{formData.role === "student" && (
-									<div>
-										<label className="block text-sm font-medium mb-2">
-											NIS
-										</label>
-										<input
-											type="text"
-											value={formData.nis}
-											onChange={(e) =>
-												setFormData({ ...formData, nis: e.target.value })
-											}
-											className="input"
-											required
-										/>
-									</div>
-								)}
-								{formData.role === "teacher" && (
-									<div>
-										<label className="block text-sm font-medium mb-2">
-											NIP
-										</label>
-										<input
-											type="text"
-											value={formData.nip}
-											onChange={(e) =>
-												setFormData({ ...formData, nip: e.target.value })
-											}
-											className="input"
-											required
-										/>
-									</div>
-								)}
+									{formData.role === "student" && (
+										<div>
+											<label className="block text-sm font-medium mb-2">
+												Username (NIS)
+											</label>
+											<input
+												type="text"
+												value={formData.nis}
+												onChange={(e) =>
+													setFormData({ ...formData, nis: e.target.value })
+												}
+												className="input"
+												placeholder="Nomor Induk Siswa"
+												required
+											/>
+										</div>
+									)}
+									{formData.role === "teacher" && (
+										<div>
+											<label className="block text-sm font-medium mb-2">
+												Username (NIP)
+											</label>
+											<input
+												type="text"
+												value={formData.nip}
+												onChange={(e) =>
+													setFormData({ ...formData, nip: e.target.value })
+												}
+												className="input"
+												placeholder="Nomor Induk Pegawai"
+												required
+											/>
+										</div>
+									)}
+								</div>
 								<div className="flex gap-3 pt-4">
 									<button type="submit" className="btn btn-primary flex-1">
 										Simpan

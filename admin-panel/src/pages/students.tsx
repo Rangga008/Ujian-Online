@@ -34,6 +34,7 @@ export default function StudentsPage() {
 		nis: "",
 		password: "",
 		classId: "",
+		studentName: "",
 	});
 
 	useEffect(() => {
@@ -45,6 +46,11 @@ export default function StudentsPage() {
 			fetchStudents();
 		}
 	}, [selectedSemesterId]);
+
+	// Reset to page 1 when search or class filter changes
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [searchQuery, selectedClass]);
 
 	const fetchInitialData = async () => {
 		try {
@@ -120,9 +126,13 @@ export default function StudentsPage() {
 			if (!searchQuery.trim()) return true;
 			const query = searchQuery.toLowerCase();
 			return (
-				student.name.toLowerCase().includes(query) ||
-				student.user?.email.toLowerCase().includes(query) ||
-				(student.user?.nis && student.user.nis.toLowerCase().includes(query))
+				(student?.name ? student.name.toLowerCase().includes(query) : false) ||
+				(student?.user?.email
+					? student.user.email.toLowerCase().includes(query)
+					: false) ||
+				(student?.user?.nis
+					? student.user.nis.toLowerCase().includes(query)
+					: false)
 			);
 		});
 
@@ -148,13 +158,18 @@ export default function StudentsPage() {
 		}
 		try {
 			// Create user first
-			const userResponse = await api.post("/users", {
-				name: formData.name,
-				email: formData.email,
+			const userPayload: any = {
+				name: formData.studentName, // Use student name as account name
 				nis: formData.nis,
 				password: formData.password,
 				role: "student",
-			});
+				studentName: formData.studentName,
+			};
+			// Only include email if it has a value
+			if (formData.email) {
+				userPayload.email = formData.email;
+			}
+			const userResponse = await api.post("/users", userPayload);
 
 			// Then assign to class if selected
 			if (formData.classId) {
@@ -175,11 +190,12 @@ export default function StudentsPage() {
 			toast.success("Siswa berhasil ditambahkan ke semester aktif");
 			setShowModal(false);
 			setFormData({
-				name: "",
 				email: "",
 				nis: "",
 				password: "",
 				classId: "",
+				studentName: "",
+				name: "", // For backward compatibility
 			});
 			fetchStudents();
 		} catch (error: any) {
@@ -443,9 +459,7 @@ export default function StudentsPage() {
 									return (
 										<tr key={student.id} className="border-b hover:bg-gray-50">
 											<td className="p-4">{student.user?.nis || "-"}</td>
-											<td className="p-4 font-medium">
-												{student.user?.name || student.name}
-											</td>
+											<td className="p-4 font-medium">{student.name}</td>
 											<td className="p-4">{student.user?.email || "-"}</td>
 											<td className="p-4">
 												{student.semester ? (
@@ -515,20 +529,23 @@ export default function StudentsPage() {
 							)}
 							<form onSubmit={handleSubmit} className="space-y-4">
 								<div>
-									<label className="block text-sm font-medium mb-2">Nama</label>
+									<label className="block text-sm font-medium mb-2">
+										Nama Siswa (Nama Sebenarnya) *
+									</label>
 									<input
 										type="text"
-										value={formData.name}
+										value={formData.studentName}
 										onChange={(e) =>
-											setFormData({ ...formData, name: e.target.value })
+											setFormData({ ...formData, studentName: e.target.value })
 										}
 										className="input"
+										placeholder="Contoh: Budi Satoso"
 										required
 									/>
 								</div>
 								<div>
 									<label className="block text-sm font-medium mb-2">
-										Email
+										Email (Opsional)
 									</label>
 									<input
 										type="email"
@@ -537,11 +554,12 @@ export default function StudentsPage() {
 											setFormData({ ...formData, email: e.target.value })
 										}
 										className="input"
-										required
 									/>
 								</div>
 								<div>
-									<label className="block text-sm font-medium mb-2">NIS</label>
+									<label className="block text-sm font-medium mb-2">
+										Username (NIS)
+									</label>
 									<input
 										type="text"
 										value={formData.nis}
@@ -549,6 +567,7 @@ export default function StudentsPage() {
 											setFormData({ ...formData, nis: e.target.value })
 										}
 										className="input"
+										placeholder="Nomor Induk Siswa"
 										required
 									/>
 								</div>

@@ -1,4 +1,5 @@
 import { Class, Semester, Subject, Grade } from "@/types/exam";
+import TimePickerInput from "@/components/TimePickerInput";
 
 interface ExamFormProps {
 	formData: {
@@ -14,6 +15,7 @@ interface ExamFormProps {
 		subjectId: string;
 		randomizeQuestions: boolean;
 		showResultImmediately: boolean;
+		requireToken: boolean;
 	};
 	setFormData: (data: any) => void;
 	semesters: Semester[];
@@ -36,6 +38,12 @@ export default function ExamForm({
 	examImagePreview,
 	onExamImageChange,
 }: ExamFormProps) {
+	const selectedGradeId = formData.gradeId;
+	const gradeOptions = grades.filter((grade) => {
+		if (!grade) return false;
+		if (grade.isActive) return true;
+		return grade.id.toString() === selectedGradeId;
+	});
 	return (
 		<div className="card">
 			<h2 className="text-xl font-bold mb-4">Informasi Ujian</h2>
@@ -166,13 +174,11 @@ export default function ExamForm({
 							required
 						>
 							<option value="">Pilih Angkatan</option>
-							{grades
-								.filter((g) => g.isActive)
-								.map((grade) => (
-									<option key={grade.id} value={grade.id.toString()}>
-										{grade.name} ({grade.section})
-									</option>
-								))}
+							{gradeOptions.map((grade) => (
+								<option key={grade.id} value={grade.id.toString()}>
+									{grade.name} ({grade.section})
+								</option>
+							))}
 						</select>
 					</div>
 				)}
@@ -216,32 +222,20 @@ export default function ExamForm({
 					/>
 				</div>
 
-				<div>
-					<label className="block text-sm font-medium mb-2">
-						Waktu Mulai *
-					</label>
-					<input
-						type="datetime-local"
+				<div className="col-span-2">
+					<TimePickerInput
+						label="Waktu Mulai"
 						value={formData.startTime}
-						onChange={(e) =>
-							setFormData({ ...formData, startTime: e.target.value })
-						}
-						className="input"
+						onChange={(value) => setFormData({ ...formData, startTime: value })}
 						required
 					/>
 				</div>
 
-				<div>
-					<label className="block text-sm font-medium mb-2">
-						Waktu Selesai *
-					</label>
-					<input
-						type="datetime-local"
+				<div className="col-span-2">
+					<TimePickerInput
+						label="Waktu Selesai"
 						value={formData.endTime}
-						onChange={(e) =>
-							setFormData({ ...formData, endTime: e.target.value })
-						}
-						className="input"
+						onChange={(value) => setFormData({ ...formData, endTime: value })}
 						required
 					/>
 				</div>
@@ -278,6 +272,25 @@ export default function ExamForm({
 						/>
 						<span className="text-sm">
 							Tampilkan hasil segera setelah selesai
+						</span>
+					</label>
+				</div>
+
+				<div className="col-span-2">
+					<label className="flex items-center gap-2">
+						<input
+							type="checkbox"
+							checked={formData.requireToken}
+							onChange={(e) =>
+								setFormData({
+									...formData,
+									requireToken: e.target.checked,
+								})
+							}
+							className="rounded"
+						/>
+						<span className="text-sm">
+							Gunakan token ujian untuk keamanan (opsional)
 						</span>
 					</label>
 				</div>

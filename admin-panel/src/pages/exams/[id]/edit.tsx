@@ -15,6 +15,7 @@ import { semestersApi } from "@/lib/semestersApi";
 import { gradesApi } from "@/lib/gradesApi";
 import { useAuthStore } from "@/store/authStore";
 import { useExamSubmit } from "@/hooks/useExamSubmit";
+import { getImageUrl } from "@/lib/imageUrl";
 import { Exam, Question } from "@/types/exam";
 
 export default function ExamEditPage() {
@@ -49,6 +50,7 @@ export default function ExamEditPage() {
 		totalScore: 100,
 		randomizeQuestions: false,
 		showResultImmediately: false,
+		requireToken: false,
 		targetType: "class" as "class" | "grade",
 		gradeId: "",
 		status: "draft",
@@ -77,21 +79,56 @@ export default function ExamEditPage() {
 			const examData = response.data;
 			console.log("📋 Exam Data:", examData);
 			console.log("📝 Questions loaded:", examData.questions?.length || 0);
-			console.log("📄 Exam Info:", {
-				title: examData.title,
-				description: examData.description,
-				duration: examData.duration,
-				classId: examData.classId,
-				subjectId: examData.subjectId,
-				semesterId: examData.semesterId,
-				startTime: examData.startTime,
-				endTime: examData.endTime,
-				imageUrl: examData.imageUrl,
-			});
-			setExam(examData);
-			setQuestions(examData.questions || []);
+			console.log(
+				"🔍 Questions loaded from API:",
+				examData.questions?.map((q: any) => ({
+					id: q.id,
+					questionText: q.questionText?.substring(0, 50),
+					type: q.type,
+					correctAnswer: q.correctAnswer,
+					optionImages: q.optionImages,
+					hasOptionImages: !!(q.optionImages && q.optionImages.length > 0),
+				}))
+			);
 
-			// Parse grade ID (try several matching strategies)
+			// Enhance questions with optionImagePreviews for option images from DB
+			const enhancedQuestions =
+				examData.questions?.map((q: any) => {
+					const enhanced = { ...q };
+					// Initialize optionImagePreviews for option images
+					if (
+						q.optionImages &&
+						Array.isArray(q.optionImages) &&
+						q.optionImages.length > 0
+					) {
+						const { getImageUrl } = require("@/lib/imageUrl");
+						enhanced.optionImagePreviews = (q.optionImages || []).map(
+							(imgPath: string) => {
+								if (!imgPath) return "";
+								try {
+									return getImageUrl(imgPath);
+								} catch (err) {
+									console.warn("Failed to get image URL for:", imgPath);
+									return "";
+								}
+							}
+						);
+						console.log(
+							"📸 Generated optionImagePreviews for question",
+							q.id,
+							":",
+							enhanced.optionImagePreviews
+						);
+					} else {
+						enhanced.optionImagePreviews = ["", "", "", "", ""];
+					}
+					return enhanced;
+				}) || [];
+
+			setExam(examData);
+			setQuestions(enhancedQuestions);
+
+			// Parse grade ID
 			let matchedGradeId = "";
 			if (examData.targetType === "grade" && examData.grade) {
 				try {
@@ -122,20 +159,14 @@ export default function ExamEditPage() {
 				totalScore: examData.totalScore || 100,
 				randomizeQuestions: examData.randomizeQuestions || false,
 				showResultImmediately: examData.showResultImmediately || false,
+				requireToken: examData.requireToken || false,
 				targetType: (examData.targetType as "class" | "grade") || "class",
 				gradeId: matchedGradeId,
 				status: examData.status || "draft",
 			});
-			console.log("✅ Form data set with:", {
-				title: examData.title,
-				description: examData.description,
-				classId: examData.classId?.toString(),
-				semesterId: examData.semesterId?.toString(),
-			});
 
 			// Load existing exam image if available
 			if (examData.imageUrl) {
-				const { getImageUrl } = await import("@/lib/imageUrl");
 				setExamImagePreview(getImageUrl(examData.imageUrl));
 			}
 
@@ -271,7 +302,7 @@ export default function ExamEditPage() {
 			return;
 		}
 
-		const success = await submitExam(`/exams/${id}`, "put");
+		const success = await submitExam(`/exams/${id}`);
 		if (success) {
 			toast.success("Ujian berhasil diperbarui");
 			router.push(`/exams/${id}`);
@@ -279,13 +310,124 @@ export default function ExamEditPage() {
 	};
 
 	const handleAddQuestionFromModal = async (questionData: any) => {
+		// Normalize correctAnswer into canonical index-based form when possible
+		const normalizeCorrectAnswer = (q: any) => {
+			const out: any = { ...q };
+			out.options = Array.isArray(q.options)
+				? q.options.map((o: any) => (o || "").toString())
+				: [];
+
+			if (q.type === "multiple_choice") {
+				const ca = String(q.correctAnswer ?? "").trim();
+				if (ca) {
+					// Prefer matching option text first (handles numeric option texts like "4")
+					let idx = out.options.indexOf(ca);
+					if (idx < 0) {
+						const lower = ca.toLowerCase();
+						idx = out.options.findIndex(
+							(o: string) => (o || "").toLowerCase() === lower
+						);
+					}
+					if (idx >= 0) {
+						out.correctAnswer = String(idx);
+					} else if (/^\d+$/.test(ca)) {
+						const num = Number(ca);
+						out.correctAnswer =
+							num >= 0 && num < out.options.length ? String(num) : "";
+					} else {
+						out.correctAnswer = "";
+					}
+				} else {
+					out.correctAnswer = "";
+				}
+			} else if (q.type === "mixed_multiple_choice") {
+				const ca = String(q.correctAnswer ?? "").trim();
+				if (!ca) {
+					out.correctAnswer = "";
+				} else if (/^[\d,\s]+$/.test(ca)) {
+					// already numeric list
+					out.correctAnswer = ca
+						.split(/\s*,\s*/)
+						.map((s: string) => s.trim())
+						.filter(Boolean)
+						.join(",");
+				} else {
+					// try parse tokens and map to option indices
+					let parts = ca
+						.split(/[;,|\/]+|\s+/)
+						.map((p) => p.trim())
+						.filter(Boolean);
+					const indices: number[] = [];
+					for (const p of parts) {
+						if (/^\d+$/.test(p)) {
+							indices.push(Number(p));
+							continue;
+						}
+						if (/^[A-Za-z]$/.test(p)) {
+							indices.push(p.toUpperCase().charCodeAt(0) - 65);
+							continue;
+						}
+						const lower = p.toLowerCase();
+						const found = out.options.findIndex(
+							(o: string) => (o || "").toLowerCase() === lower
+						);
+						if (found >= 0) indices.push(found);
+					}
+					out.correctAnswer = Array.from(
+						new Set(indices.filter((n) => n >= 0 && n < out.options.length))
+					).join(",");
+				}
+			}
+
+			return out;
+		};
+
 		if (editingQuestionIndex !== null) {
 			const updated = [...questions];
-			updated[editingQuestionIndex] = questionData;
+			const existingQuestion = updated[editingQuestionIndex];
+			const normalized = normalizeCorrectAnswer(questionData);
+			console.log("🔁 Editing question - incoming:", questionData);
+			console.log(
+				"🔁 Editing question - incoming.correctAnswer:",
+				questionData.correctAnswer
+			);
+			console.log("🔁 Editing question - normalized:", normalized);
+			console.log(
+				"🔁 Editing question - normalized.correctAnswer:",
+				normalized.correctAnswer
+			);
+			const normalizedOptionImages =
+				normalized.optionImages !== undefined
+					? normalized.optionImages
+					: existingQuestion.optionImages;
+			updated[editingQuestionIndex] = {
+				...normalized,
+				id: existingQuestion.id,
+				orderIndex: editingQuestionIndex,
+				optionImages: normalizedOptionImages,
+				optionImageFiles: questionData.optionImageFiles,
+				optionImagePreviews: questionData.optionImagePreviews,
+			};
 			setQuestions(updated);
+			console.log(
+				"🔁 Questions state after update (correctAnswers):",
+				updated.map((q) => ({ id: q.id, correctAnswer: q.correctAnswer }))
+			);
 			toast.success("Soal berhasil diperbarui");
 		} else {
-			setQuestions([...questions, questionData]);
+			const normalized = normalizeCorrectAnswer(questionData);
+			console.log("➕ Adding question - incoming:", questionData);
+			console.log("➕ Adding question - normalized:", normalized);
+			const newQuestion = {
+				...normalized,
+				orderIndex: questions.length,
+				optionImageFiles: questionData.optionImageFiles,
+				optionImagePreviews: questionData.optionImagePreviews,
+				optionImages: normalized.optionImages,
+			};
+			const next = [...questions, newQuestion];
+			setQuestions(next);
+			console.log("➕ Questions state after add:", next);
 			toast.success("Soal berhasil ditambahkan");
 		}
 		setShowQuestionModal(false);

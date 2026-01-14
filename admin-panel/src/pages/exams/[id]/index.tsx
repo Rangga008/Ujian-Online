@@ -18,6 +18,9 @@ interface Question {
 	correctAnswer?: string;
 	imageUrl?: string;
 	orderIndex: number;
+	optionImages?: string[];
+	optionImagePreviews?: string[];
+	allowPhotoAnswer?: boolean;
 }
 
 interface Exam {
@@ -32,6 +35,8 @@ interface Exam {
 	totalScore: number;
 	randomizeQuestions: boolean;
 	showResultImmediately: boolean;
+	token?: string;
+	requireToken: boolean;
 	class?: { id: number; name: string };
 	targetType?: string;
 	grade?: string;
@@ -53,6 +58,7 @@ export default function ExamDetailPage() {
 	const [exam, setExam] = useState<Exam | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [expandedQuestion, setExpandedQuestion] = useState<number | null>(null);
+	const [generatingToken, setGeneratingToken] = useState(false);
 
 	useEffect(() => {
 		if (id) {
@@ -82,6 +88,20 @@ export default function ExamDetailPage() {
 			router.push("/exams");
 		} catch (error) {
 			toast.error("Gagal menghapus ujian");
+		}
+	};
+
+	const handleGenerateToken = async () => {
+		try {
+			setGeneratingToken(true);
+			await api.post(`/exams/${id}/generate-token`);
+			// Refetch exam dari DB untuk get token yang baru
+			await fetchExam();
+			toast.success("Token berhasil dibuat!");
+		} catch (error) {
+			toast.error("Gagal membuat token");
+		} finally {
+			setGeneratingToken(false);
 		}
 	};
 
@@ -183,7 +203,7 @@ export default function ExamDetailPage() {
 					</div>
 
 					{/* Exam Info Grid */}
-					<div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
+					<div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t mb-4">
 						<div>
 							<p className="text-gray-600 text-sm">Durasi</p>
 							<p className="text-lg font-semibold">⏱️ {exam.duration} menit</p>
@@ -249,6 +269,54 @@ export default function ExamDetailPage() {
 						</div>
 					</div>
 				</div>
+
+				{/* Token Section - Only show when requireToken is true */}
+				{exam.requireToken && (
+					<div className="card mb-6">
+						<div className="flex items-center justify-between">
+							<div className="flex-1">
+								<h3 className="font-semibold text-blue-900 mb-1 text-lg">
+									🔐 Token Ujian
+								</h3>
+								<p className="text-sm text-blue-700">
+									Token diperlukan untuk mengakses ujian ini
+								</p>
+								{exam.token && (
+									<div className="mt-3 p-3 bg-white rounded border border-blue-300">
+										<p className="text-xs text-gray-600">Token Aktif:</p>
+										<p className="text-lg font-mono font-bold text-blue-600 mt-1">
+											{exam.token}
+										</p>
+										<button
+											onClick={() => {
+												navigator.clipboard.writeText(exam.token!);
+												toast.success("Token disalin!");
+											}}
+											className="text-xs text-blue-600 hover:underline mt-2"
+										>
+											📋 Salin
+										</button>
+									</div>
+								)}
+							</div>
+							<button
+								onClick={handleGenerateToken}
+								disabled={generatingToken}
+								className={`px-4 py-2 rounded-lg font-medium text-sm flex-shrink-0 ${
+									generatingToken
+										? "bg-gray-300 text-gray-600 cursor-not-allowed"
+										: "bg-blue-600 text-white hover:bg-blue-700"
+								}`}
+							>
+								{generatingToken
+									? "Membuat..."
+									: exam.token
+									? "Regenerate Token"
+									: "Buat Token"}
+							</button>
+						</div>
+					</div>
+				)}
 
 				{/* Questions Section */}
 				<div className="card">
@@ -392,28 +460,64 @@ export default function ExamDetailPage() {
 																		}
 																	}
 																} else {
-																	isCorrect =
-																		normalize(question.correctAnswer) ===
-																		normalize(option);
+																	const caRaw = normalize(
+																		question.correctAnswer
+																	);
+																	if (/^\d+$/.test(caRaw)) {
+																		isCorrect = Number(caRaw) === idx;
+																	} else if (/^[A-Za-z]$/.test(caRaw)) {
+																		isCorrect =
+																			caRaw.toUpperCase().charCodeAt(0) - 65 ===
+																			idx;
+																	} else {
+																		isCorrect = caRaw === normalize(option);
+																	}
 																}
 																return (
 																	<div
 																		key={idx}
-																		className={`p-2 rounded text-sm ${
+																		className={`p-3 rounded text-sm border ${
 																			isCorrect
-																				? "bg-green-100 border border-green-300 text-green-800"
-																				: "bg-gray-100 text-gray-700"
+																				? "bg-green-100 border-green-300 text-green-800"
+																				: "bg-gray-100 border-gray-200 text-gray-700"
 																		}`}
 																	>
-																		<span className="font-medium">
-																			{String.fromCharCode(65 + idx)}.
-																		</span>{" "}
-																		{option}
-																		{isCorrect && (
-																			<span className="ml-2 font-bold">
-																				✓ Benar
-																			</span>
-																		)}
+																		<div className="flex items-start justify-between gap-2">
+																			<div className="flex-1">
+																				<div>
+																					<span className="font-medium">
+																						{String.fromCharCode(65 + idx)}.
+																					</span>{" "}
+																					{option}
+																				</div>
+																				{isCorrect && (
+																					<span className="ml-2 font-bold">
+																						✓ Benar
+																					</span>
+																				)}
+																			</div>
+																			{/* Display option image if exists */}
+																			{((question as any).optionImages?.[idx] ||
+																				(question as any).optionImagePreviews?.[
+																					idx
+																				]) && (
+																				<img
+																					src={
+																						(question as any)
+																							.optionImagePreviews?.[idx] ||
+																						getImageUrl(
+																							(question as any).optionImages?.[
+																								idx
+																							]
+																						)
+																					}
+																					alt={`Option ${String.fromCharCode(
+																						65 + idx
+																					)}`}
+																					className="w-20 h-20 object-contain rounded border flex-shrink-0"
+																				/>
+																			)}
+																		</div>
 																	</div>
 																);
 															})}

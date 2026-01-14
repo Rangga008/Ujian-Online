@@ -13,6 +13,20 @@ export default function QuestionList({
 	onEdit,
 	onDelete,
 }: QuestionListProps) {
+	// Debug: log questions with their IDs
+	useEffect(() => {
+		console.log(
+			"📋 QuestionList rendered with questions:",
+			questions.map((q: any, idx) => ({
+				idx,
+				id: q.id,
+				type: q.type,
+				text: q.questionText?.substring(0, 30),
+				correctAnswer: q.correctAnswer,
+			}))
+		);
+	}, [questions]);
+
 	if (questions.length === 0) {
 		return (
 			<div className="card">
@@ -61,6 +75,11 @@ export default function QuestionList({
 								<p className="text-xs text-gray-500 mt-1">
 									Tipe: {getQuestionTypeLabel(question.type)} | Poin:{" "}
 									{question.points}
+									{(question as any).allowPhotoAnswer && (
+										<span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium inline-block">
+											📷 Foto Jawaban
+										</span>
+									)}
 								</p>
 							</div>
 							<div className="flex gap-2 ml-4">
@@ -109,7 +128,14 @@ export default function QuestionList({
 									let isCorrect = false;
 									const normalize = (s: any) => (s || "").toString().trim();
 
-									if (question.type === "mixed_multiple_choice") {
+									if (question.type === "true_false") {
+										// For true/false: options are "BENAR" or "SALAH"
+										const caRaw = normalize(
+											question.correctAnswer
+										).toUpperCase();
+										const optRaw = normalize(option).toUpperCase();
+										isCorrect = caRaw === optRaw;
+									} else if (question.type === "mixed_multiple_choice") {
 										const caRaw = normalize(question.correctAnswer);
 										if (!caRaw) {
 											isCorrect = false;
@@ -162,21 +188,86 @@ export default function QuestionList({
 											}
 										}
 									} else {
-										isCorrect =
-											normalize(question.correctAnswer) === normalize(option);
+										// Handle several formats for correctAnswer:
+										// - numeric index ("0", "2") -> index into options
+										// - single letter ("A") -> map to index
+										// - option text -> compare text
+										const caRaw = normalize(question.correctAnswer);
+										if (/^\d+$/.test(caRaw)) {
+											isCorrect = Number(caRaw) === optIdx;
+										} else if (/^[A-Za-z]$/.test(caRaw)) {
+											isCorrect =
+												caRaw.toUpperCase().charCodeAt(0) - 65 === optIdx;
+										} else {
+											isCorrect =
+												normalize(question.correctAnswer) === normalize(option);
+										}
+									}
+
+									// Debug per-option correctness to help diagnose missing highlight
+									if (process.env.NODE_ENV !== "production") {
+										const caRaw = normalize(question.correctAnswer);
+										console.log(`🔍 Q${idx} opt${optIdx}:`, {
+											questionType: question.type,
+											correctAnswerRaw: question.correctAnswer,
+											caRaw,
+											option,
+											optIdx,
+											isCorrect,
+										});
+									}
+
+									// Format display label based on type
+									let displayLabel: string;
+									if (question.type === "true_false") {
+										displayLabel = `${String.fromCharCode(
+											65 + optIdx
+										)}. ${option}`;
+									} else {
+										// For multiple choice - only show text if it exists (images show without label)
+										const displayText = option.trim() === "" ? "" : option;
+										displayLabel = `${String.fromCharCode(
+											65 + optIdx
+										)}. ${displayText}`;
 									}
 
 									return (
 										<div
 											key={optIdx}
-											className={`text-sm ${
+											className={`text-sm p-2 rounded border ${
 												isCorrect
-													? "text-green-600 font-medium"
-													: "text-gray-600"
+													? "bg-green-50 border-green-300"
+													: "bg-gray-50 border-gray-200"
 											}`}
 										>
-											{String.fromCharCode(65 + optIdx)}. {option}
-											{isCorrect && <span className="ml-2">✓</span>}
+											<div className="flex items-start justify-between gap-2">
+												<div className="flex-1">
+													<span
+														className={
+															isCorrect
+																? "text-green-600 font-medium"
+																: "text-gray-600"
+														}
+													>
+														{displayLabel}
+													</span>
+													{isCorrect && <span className="ml-2">✓</span>}
+												</div>
+												{/* Display option image if exists - check both saved images and previews */}
+												{((question as any).optionImages?.[optIdx] ||
+													(question as any).optionImagePreviews?.[optIdx]) && (
+													<img
+														src={
+															(question as any).optionImagePreviews?.[optIdx] ||
+															getImageUrl(
+																(question as any).optionImages?.[optIdx]
+															)
+														}
+														alt={`Option ${String.fromCharCode(65 + optIdx)}`}
+														className="w-16 h-16 object-contain rounded border"
+													/>
+												)}
+											</div>
 										</div>
 									);
 								})}

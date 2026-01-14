@@ -36,6 +36,10 @@ export interface Question {
 	orderIndex: number;
 	imageUrl?: string;
 	imageFile?: File | null;
+	optionImages?: string[];
+	optionImageFiles?: (File | null)[];
+	optionImagePreviews?: string[];
+	allowPhotoAnswer?: boolean;
 }
 
 export interface Exam {
@@ -53,6 +57,8 @@ export interface Exam {
 	subjectId?: number;
 	randomizeQuestions: boolean;
 	showResultImmediately: boolean;
+	requireToken: boolean;
+	token?: string;
 	status: string;
 	totalScore: number;
 	totalQuestions: number;

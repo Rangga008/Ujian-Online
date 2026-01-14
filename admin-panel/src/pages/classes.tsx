@@ -216,7 +216,7 @@ export default function ClassesPage() {
 			const payload = {
 				name: formData.name,
 				grade: selectedGrade.level,
-				gradeId: formData.gradeId,
+				gradeId: Number(formData.gradeId),
 				major:
 					formData.subjectIds && formData.subjectIds.length > 0
 						? subjects
@@ -225,10 +225,10 @@ export default function ClassesPage() {
 								.join(", ")
 						: formData.major,
 				academicYear: academicYearValue,
-				semesterId: semesterToUse || activeSemester?.id,
+				semesterId: Number(semesterToUse || activeSemester?.id),
 				capacity: formData.capacity ? Number(formData.capacity) : undefined,
 				isActive: formData.isActive,
-				subjectIds: formData.subjectIds,
+				subjectIds: formData.subjectIds.map((id: any) => Number(id)),
 			} as any;
 
 			if (editingClass) {
@@ -554,10 +554,10 @@ export default function ClassesPage() {
 										>
 											<option value={0}>Pilih Angkatan</option>
 											{grades
-												.filter((g) => g.section === "SMA" && g.isActive)
+												.filter((g) => g.isActive)
 												.map((grade) => (
 													<option key={grade.id} value={grade.id}>
-														{grade.name} (Kelas {grade.level})
+														{grade.name} ({grade.section})
 													</option>
 												))}
 										</select>

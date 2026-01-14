@@ -15,6 +15,7 @@ export interface Class {
 	name: string;
 	grade: number;
 	major: string;
+	semesterId?: number; // For distinguishing classes across semesters
 }
 
 const teachersApi = {

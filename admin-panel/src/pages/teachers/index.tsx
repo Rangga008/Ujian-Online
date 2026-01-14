@@ -333,7 +333,7 @@ export default function TeachersPage() {
 
 								<div>
 									<label className="block text-sm font-medium mb-2">
-										Email *
+										Email (Opsional)
 									</label>
 									<input
 										type="email"
@@ -347,7 +347,7 @@ export default function TeachersPage() {
 
 								<div>
 									<label className="block text-sm font-medium mb-2">
-										NIP (Nomor Induk Pegawai) *
+										Username (NIP - Nomor Induk Pegawai) *
 									</label>
 									<input
 										type="text"
@@ -356,6 +356,7 @@ export default function TeachersPage() {
 										onChange={(e) =>
 											setFormData({ ...formData, nip: e.target.value })
 										}
+										placeholder="Nomor Induk Pegawai"
 									/>
 								</div>
 

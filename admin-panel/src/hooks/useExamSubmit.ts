@@ -3,6 +3,12 @@ import api from "@/lib/api";
 import toast from "react-hot-toast";
 import { Question, Grade } from "@/types/exam";
 import { compressImageBrowser, formatFileSize } from "@/lib/imageCompression";
+import {
+	uploadImageFile,
+	uploadOptionImages,
+	dataUrlToFile,
+	validateOptionImages,
+} from "@/lib/imageHandler";
 
 interface UseExamSubmitProps {
 	questions: Question[];
@@ -78,12 +84,22 @@ export function useExamSubmit({
 				continue;
 			}
 
-			const filledOptions = (q.options || []).filter((o) => o.trim());
+			// For multiple choice questions, count options that have either text OR image
+			const filledOptions = (q.options || []).filter((o, idx) => {
+				const hasText = o.trim() !== "";
+				const hasImage =
+					(q as any).optionImagePreviews?.[idx] ||
+					(q as any).optionImages?.[idx];
+				return hasText || hasImage;
+			});
 			if (filledOptions.length < 2) {
 				toast.error(`Soal ${i + 1}: Minimal 2 pilihan diisi`);
 				return false;
 			}
-			if (!q.correctAnswer.trim()) {
+			if (
+				!q.correctAnswer ||
+				(typeof q.correctAnswer === "string" && !q.correctAnswer.trim())
+			) {
 				toast.error(`Soal ${i + 1}: Pilih jawaban benar`);
 				return false;
 			}
@@ -93,16 +109,25 @@ export function useExamSubmit({
 	};
 
 	const uploadImage = async (file: File): Promise<string> => {
-		const fd = new FormData();
-		fd.append("file", file);
-		const uploadRes = await api.post("/settings/upload", fd, {
-			headers: { "Content-Type": "multipart/form-data" },
-		});
-		return uploadRes.data.path || uploadRes.data.url;
+		try {
+			const result = await uploadImageFile(file, true);
+			return result.url;
+		} catch (error: any) {
+			console.error("Image upload error:", error);
+			throw error;
+		}
 	};
 
 	const processQuestions = async (): Promise<any[]> => {
-		// Keep points as entered; do not normalize
+		console.log(
+			"🔄 processQuestions - Input questions from state:",
+			questions.map((q: any) => ({
+				id: q.id,
+				type: q.type,
+				text: q.questionText?.substring(0, 30),
+			}))
+		);
+
 		const processedQuestions = await Promise.all(
 			questions.map(async (q, idx) => {
 				let imageUrl = "";
@@ -126,7 +151,84 @@ export function useExamSubmit({
 				let points = typeof q.points === "number" ? q.points : Number(q.points);
 				if (Number.isNaN(points) || points < 1) points = 1;
 
+				// Upload option images if present
+				let optionImages: string[] = [];
+				console.log(`📸 Q${idx}: All question properties:`, Object.keys(q));
+				console.log(`📸 Q${idx}: Processing option images`, {
+					hasOptionImageFiles: !!q.optionImageFiles,
+					optionImageFilesLength: q.optionImageFiles?.length,
+					hasOptionImagePreviews: !!q.optionImagePreviews,
+					optionImagePreviewsLength: q.optionImagePreviews?.length,
+				});
+
+				// Collect files to upload
+				let filesToUpload: (File | null)[] = [];
+
+				if (
+					q.optionImageFiles &&
+					Array.isArray(q.optionImageFiles) &&
+					q.optionImageFiles.length > 0
+				) {
+					// Use uploaded files directly
+					console.log(
+						`📸 Q${idx}: Using optionImageFiles:`,
+						q.optionImageFiles.length
+					);
+					filesToUpload = q.optionImageFiles;
+				} else if (
+					q.optionImagePreviews &&
+					Array.isArray(q.optionImagePreviews)
+				) {
+					// Convert base64 previews to Files
+					console.log(`📸 Q${idx}: Converting optionImagePreviews to Files`);
+					filesToUpload = q.optionImagePreviews
+						.map((dataUrl: string, idx: number) => {
+							if (!dataUrl || dataUrl === "") return null;
+							try {
+								return dataUrlToFile(dataUrl, `option-${idx}.png`);
+							} catch (err) {
+								console.error(`Failed to convert preview ${idx}:`, err);
+								return null;
+							}
+						})
+						.filter((f) => f !== null);
+				}
+
+				// Validate option images before upload
+				if (filesToUpload.length > 0) {
+					try {
+						validateOptionImages(filesToUpload);
+						console.log(
+							`📸 Q${idx}: Uploading ${filesToUpload.length} option images`
+						);
+						optionImages = await uploadOptionImages(filesToUpload, true);
+						console.log(`📸 Q${idx}: Final optionImages URLs:`, optionImages);
+					} catch (err) {
+						console.error(
+							`❌ Q${idx}: Option image validation/upload failed:`,
+							err
+						);
+						optionImages = filesToUpload.map(() => "");
+					}
+				} else if (
+					q.optionImages &&
+					Array.isArray(q.optionImages) &&
+					q.optionImages.length > 0
+				) {
+					// Use existing images from DB
+					console.log(`📸 Q${idx}: Using existing optionImages from DB`);
+					optionImages = q.optionImages;
+				}
+
+				console.log(`📸 Q${idx}: Final optionImages array:`, optionImages);
+
+				// Initialize filteredOptionImages (will be updated for multiple choice below)
+				let filteredOptionImages = Array.isArray(optionImages)
+					? [...optionImages]
+					: [];
+
 				const base: any = {
+					...(q.id && { id: q.id }), // Include ID if exists (for updates)
 					questionText: q.questionText,
 					type: q.type,
 					points,
@@ -134,8 +236,22 @@ export function useExamSubmit({
 					imageUrl: imageUrl || q.imageUrl || "",
 				};
 
+				console.log(`📋 Processing Q${idx}:`, {
+					id: q.id,
+					type: q.type,
+					hasId: !!q.id,
+					hasOptionImages: optionImages.length > 0,
+					optionImagesCount: optionImages.length,
+					filteredOptionImagesLength: filteredOptionImages.length,
+				});
+
 				if (q.type === "essay") {
-					return { ...base, options: [], correctAnswer: "" };
+					return {
+						...base,
+						options: [],
+						correctAnswer: "",
+						optionImages: [],
+					};
 				}
 
 				if (q.type === "true_false") {
@@ -143,50 +259,88 @@ export function useExamSubmit({
 						...base,
 						options: ["Benar", "Salah"],
 						correctAnswer: String(q.correctAnswer ?? ""),
+						optionImages: [],
 					};
 				}
 
 				const optionsRaw = q.options || [];
+				// Filter options: remove empty ones UNLESS they have a corresponding image
+				const hasOptionImages = optionImages && optionImages.length > 0;
 				const filteredOptions = optionsRaw
-					.map((o) => o.trim())
-					.filter((o) => o !== "");
+					.map((o, idx) => {
+						const trimmed = o.trim();
+						// Keep non-empty options always
+						if (trimmed) return trimmed;
+						// Keep empty options only if they have an image
+						if (hasOptionImages && optionImages[idx]) {
+							return ""; // Keep the empty placeholder
+						}
+						return null; // Mark for removal
+					})
+					.filter((o) => o !== null) as string[];
+
+				// Also filter optionImages to match filteredOptions length
+				if (filteredOptions.length !== optionImages.length) {
+					console.log(
+						`📸 Q${idx}: Filtering optionImages from ${optionImages.length} to ${filteredOptions.length}`
+					);
+					// Keep only images for options that weren't filtered out
+					const imageKeepMap: boolean[] = optionsRaw.map((o, idx) => {
+						const trimmed = o.trim();
+						if (trimmed) return true; // Keep image for non-empty option
+						if (hasOptionImages && optionImages[idx]) return true; // Keep image for photo-only option
+						return false; // Remove image for filtered-out option
+					});
+					filteredOptionImages = optionImages.filter(
+						(_, idx) => imageKeepMap[idx]
+					);
+					console.log(
+						`📸 Q${idx}: Final filteredOptionImages:`,
+						filteredOptionImages
+					);
+				}
 
 				if (q.type === "mixed_multiple_choice") {
 					// Parse correctAnswer which may be in several formats:
-					// - comma-separated numeric indices (0-based or 1-based)
-					// - letters like A,B,C
-					// - option texts
-					const caRaw = String(q.correctAnswer || "").trim();
-					const tokens = caRaw
-						? caRaw
-								.split(/[\s,;|\/]+/)
-								.map((t) => t.trim())
-								.filter(Boolean)
-						: [];
-
-					// Build mapping from original options array to filteredOptions indices
-					const origToFiltered: Record<number, number> = {};
-					const filtered: string[] = [];
-					for (let i = 0, fi = 0; i < optionsRaw.length; i++) {
-						const v = (optionsRaw[i] || "").trim();
-						if (v !== "") {
-							filtered.push(v);
-							origToFiltered[i] = fi;
-							fi++;
-						}
-					}
+					// - "A,B,C" or "A; B; C" or similar delimited
+					// - "0,1,2" (indices into options array)
+					// - Pre-parsed array (shouldn't happen in UI, but handle it)
 
 					let selectedFilteredIndexes: number[] = [];
 
-					if (tokens.length > 0) {
-						// Numeric tokens
-						if (tokens.every((t) => /^\d+$/.test(t))) {
-							let nums = tokens.map((t) => Number(t));
-							// Heuristic: if any num > optionsRaw.length, assume 1-based and subtract 1
-							if (nums.some((n) => n > optionsRaw.length)) {
-								nums = nums.map((n) => n - 1);
+					// Parse raw correctAnswer
+					const correctRaw = (q.correctAnswer || "").toString().trim();
+					const origToFiltered: Record<number, number | undefined> = {};
+					// Build mapping from original indices to filtered indices
+					// IMPORTANT: Don't skip empty options - they may have images and be part of correctAnswer
+					for (let origIdx = 0; origIdx < optionsRaw.length; origIdx++) {
+						const origOpt = optionsRaw[origIdx]?.trim() || "";
+						// For non-empty options, find their position in filteredOptions
+						// For empty options (photo-only), map directly if they exist in filtered
+						if (origOpt) {
+							// Non-empty option text: match in filteredOptions
+							const filtPos = filteredOptions.indexOf(origOpt);
+							if (filtPos >= 0) {
+								origToFiltered[origIdx] = filtPos;
 							}
-							// Map through origToFiltered
+						} else {
+							// Empty option (photo-only): For MMC with photos, keep the index mapping
+							// Since filteredOptions still has the option even if text is empty (if it has image)
+							origToFiltered[origIdx] = origIdx; // Map to same index
+						}
+					}
+
+					// Parse tokens from correctRaw
+					const tokens = correctRaw
+						.split(/[;,\|\/]/)
+						.map((t: string) => t.trim())
+						.filter((t: string) => t);
+
+					if (tokens.length > 0) {
+						// Try to identify format: numeric indices or letter indices or text options
+						if (tokens.every((t) => /^\d+$/.test(t))) {
+							// Numeric indices 0,1,2 -> map to filtered indices
+							const nums = tokens.map((t) => Number(t));
 							selectedFilteredIndexes = nums
 								.map((orig) => origToFiltered[orig])
 								.filter((i) => typeof i === "number");
@@ -199,114 +353,198 @@ export function useExamSubmit({
 								.map((orig) => origToFiltered[orig])
 								.filter((i) => typeof i === "number");
 						} else {
-							// Token may be option text; match against filtered (normalized)
-							const normalize = (s: string) =>
-								(s || "").toString().replace(/\s+/g, " ").trim().toLowerCase();
-							const lowerFiltered = filtered.map((f) => normalize(f));
+							// Text tokens: find matching options in filteredOptions
 							selectedFilteredIndexes = tokens
-								.map((tok) => {
-									// if token looks like 'A. text' remove leading letter and dot
-									const cleaned = tok.replace(/^\s*[A-Za-z]\.\s*/, "").trim();
-									const ni = normalize(cleaned);
-									return lowerFiltered.indexOf(ni);
+								.map((token: string) => {
+									const lowerToken = token.toLowerCase();
+									return filteredOptions.findIndex(
+										(opt) => opt.toLowerCase() === lowerToken
+									);
 								})
-								.filter((i) => i >= 0);
+								.filter((idx: number) => idx >= 0);
 						}
 					}
 
-					// Deduplicate and keep valid indices
-					selectedFilteredIndexes = Array.from(
-						new Set(selectedFilteredIndexes)
-					).filter((i) => i >= 0 && i < filtered.length);
-
-					const mappedAnswers = selectedFilteredIndexes
-						.map((fi) => filtered[fi])
-						.filter(Boolean)
-						.join(",");
-
+					const corrStr =
+						selectedFilteredIndexes.length > 0
+							? selectedFilteredIndexes.join(",")
+							: "";
 					return {
 						...base,
-						options: filtered,
-						correctAnswer: String(mappedAnswers || ""),
+						options: filteredOptions,
+						correctAnswer: corrStr,
+						optionImages: filteredOptionImages,
 					};
 				}
 
-				const result = {
+				// For regular multiple_choice, convert correctAnswer to text or index
+				let correctAnswer: any = q.correctAnswer;
+
+				if (q.type === "multiple_choice") {
+					if (typeof correctAnswer === "number") {
+						// If numeric, convert to option text from filtered options
+						if (correctAnswer >= 0 && correctAnswer < filteredOptions.length) {
+							correctAnswer =
+								filteredOptions[correctAnswer] || String(correctAnswer);
+						}
+					} else if (typeof correctAnswer === "string") {
+						// If text, make sure it's in filteredOptions
+						if (!filteredOptions.includes(correctAnswer)) {
+							// Try to find a match (case-insensitive)
+							const match = filteredOptions.find(
+								(opt) => opt.toLowerCase() === correctAnswer.toLowerCase()
+							);
+							correctAnswer = match || correctAnswer;
+						}
+					}
+				}
+
+				return {
 					...base,
-					id: (q as any).id, // include existing id for updates
 					options: filteredOptions,
-					correctAnswer: String(q.correctAnswer || ""),
+					correctAnswer: String(correctAnswer ?? ""),
+					optionImages: filteredOptionImages,
 				};
-				// processed question ready for submission
-				return result;
 			})
 		);
 
-		// All questions processed
+		console.log("📦 Processed questions to send:", processedQuestions);
+		console.log("📦 First question details:", {
+			...(processedQuestions[0] && {
+				text: processedQuestions[0].questionText?.substring(0, 30),
+				type: processedQuestions[0].type,
+				optionImages: processedQuestions[0].optionImages,
+				optionImagesLength: processedQuestions[0].optionImages?.length,
+			}),
+		});
+		console.log(
+			"📦 Final payload questions (first 2):",
+			processedQuestions.slice(0, 2)
+		);
 
 		return processedQuestions;
 	};
 
 	const submitExam = async (
-		endpoint: string,
-		method: "post" | "put" = "post"
-	): Promise<boolean> => {
-		if (!validateForm()) return false;
+		examId?: number | string
+	): Promise<void | boolean> => {
+		// Handle both numeric ID and string endpoint
+		let resolvedId: number | undefined;
+		if (typeof examId === "string") {
+			// Extract ID from endpoint like "/exams/40"
+			const match = examId.match(/\/exams\/(\d+)/);
+			resolvedId = match ? Number(match[1]) : undefined;
+		} else {
+			resolvedId = examId;
+		}
 
-		setLoading(true);
+		console.log(
+			"📝 State questions at submitExam (raw):",
+			questions.map((q: any) => ({
+				id: q.id,
+				type: q.type,
+				hasFiles: !!q.optionImageFiles,
+			}))
+		);
+
+		if (!validateForm()) {
+			return false;
+		}
+
 		try {
-			// Upload exam image
-			let examImageUrl = "";
-			if (examImageFile) {
-				examImageUrl = await uploadImage(examImageFile);
-			}
+			setLoading(true);
 
-			// Process questions
+			// Process questions (upload images, filter options, etc)
 			const processedQuestions = await processQuestions();
 
-			// Build payload
-			const payload: any = {
-				title: formData.title,
-				description: formData.description,
-				duration: formData.duration,
-				startTime: new Date(formData.startTime).toISOString(),
-				endTime: new Date(formData.endTime).toISOString(),
-				semesterId: Number(formData.semesterId),
-				targetType: formData.targetType,
-				subjectId: formData.subjectId ? Number(formData.subjectId) : undefined,
+			// Prepare exam payload
+			const examPayload: any = {
+				...formData,
+				questions: processedQuestions,
 				totalScore: processedQuestions.reduce(
 					(sum, q) => sum + (q.points || 0),
 					0
 				),
 				totalQuestions: processedQuestions.length,
-				randomizeQuestions: formData.randomizeQuestions,
-				showResultImmediately: formData.showResultImmediately,
-				status: formData.status || "draft",
-				imageUrl: examImageUrl || undefined,
-				questions: processedQuestions,
 			};
 
-			if (formData.targetType === "class") {
-				payload.classId = Number(formData.classId);
-			} else {
-				const selectedGrade = grades.find(
-					(g) => g.id === Number(formData.gradeId)
-				);
-				if (selectedGrade) {
-					payload.grade = selectedGrade.name;
-					payload.classId = undefined;
+			// Handle exam image upload if present
+			if (examImageFile) {
+				try {
+					const compressed = await compressImageBrowser(
+						examImageFile,
+						1920,
+						0.75
+					);
+					examPayload.imageUrl = await uploadImage(compressed.file);
+				} catch (err) {
+					console.error("Exam image compression failed:", err);
+					examPayload.imageUrl = await uploadImage(examImageFile);
 				}
 			}
 
-			// Submit
-			if (method === "post") {
-				await api.post(endpoint, payload);
-			} else {
-				await api.put(endpoint, payload);
+			// Convert ID fields to numbers
+			if (examPayload.classId) {
+				examPayload.classId = Number(examPayload.classId);
+			}
+			if (examPayload.semesterId) {
+				examPayload.semesterId = Number(examPayload.semesterId);
+			}
+			if (examPayload.subjectId) {
+				examPayload.subjectId = Number(examPayload.subjectId);
 			}
 
+			const gradeSelectionId = examPayload.gradeId;
+
+			// Find matching grade if targetType is "grade"
+			if (examPayload.targetType === "grade") {
+				const selectedGrade = grades.find(
+					(g) => g.id === Number(gradeSelectionId || 0)
+				);
+				if (selectedGrade) {
+					examPayload.grade = `${selectedGrade.name} (${selectedGrade.section})`;
+				}
+				// Remove classId when targeting by grade (not by specific class)
+				delete examPayload.classId;
+			}
+
+			if (examPayload.gradeId) {
+				// gradeId is for filtering only, not sent to backend
+				delete examPayload.gradeId;
+			}
+
+			console.log("📤 Sending payload to API:", {
+				method: resolvedId ? "put" : "post",
+				endpoint: resolvedId ? `/exams/${resolvedId}` : "/exams",
+				totalQuestions: processedQuestions.length,
+				firstQuestionHasOptionImages:
+					processedQuestions[0]?.optionImages?.length > 0,
+				firstQuestionOptionImagesLength:
+					processedQuestions[0]?.optionImages?.length || 0,
+			});
+
+			// Debug: Log the actual payload being sent
+			console.log("📦 Actual examPayload.questions[0]:", {
+				questionText: examPayload.questions?.[0]?.questionText?.substring(
+					0,
+					30
+				),
+				type: examPayload.questions?.[0]?.type,
+				hasOptionImages: !!examPayload.questions?.[0]?.optionImages,
+				optionImages: examPayload.questions?.[0]?.optionImages,
+			});
+
+			// Make API call
+			if (resolvedId) {
+				await api.put(`/exams/${resolvedId}`, examPayload);
+			} else {
+				await api.post("/exams", examPayload);
+			}
+
+			toast.success("Ujian berhasil dibuat/diperbarui");
 			return true;
 		} catch (error: any) {
+			console.error("Submit error:", error);
 			toast.error(error.response?.data?.message || "Gagal menyimpan ujian");
 			return false;
 		} finally {

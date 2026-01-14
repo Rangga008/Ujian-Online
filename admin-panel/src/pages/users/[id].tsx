@@ -194,8 +194,12 @@ export default function UserDetailPage() {
 
 	const handleOpenEditUser = () => {
 		if (!user) return;
+		const activeStudent = studentRecords.find((s) => s.semester?.isActive);
 		setEditFormData({
-			name: user.name,
+			name:
+				user.role === "student" && activeStudent
+					? activeStudent.name
+					: user.name,
 			email: user.email,
 			nis: user.nis || "",
 			nip: user.nip || "",
@@ -205,17 +209,25 @@ export default function UserDetailPage() {
 
 	const handleUpdateUser = async () => {
 		if (!user) return;
-		if (!editFormData.name || !editFormData.email) {
-			toast.error("Nama dan email harus diisi");
+		if (!editFormData.name) {
+			toast.error("Nama harus diisi");
+			return;
+		}
+		// Email required for student and admin, optional for teacher
+		if (!editFormData.email && user.role !== "teacher") {
+			toast.error("Email harus diisi");
 			return;
 		}
 
 		try {
 			const payload: any = {
 				name: editFormData.name,
-				email: editFormData.email,
 				role: user.role,
 			};
+			// Only include email if it has a value
+			if (editFormData.email) {
+				payload.email = editFormData.email;
+			}
 			if (user.role === "student" && editFormData.nis) {
 				payload.nis = editFormData.nis;
 			}
@@ -305,7 +317,10 @@ export default function UserDetailPage() {
 						<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
 							<div>
 								<h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-									Detail Pengguna: {user?.name || "Loading..."}
+									Detail Pengguna:{" "}
+									{isStudent && activeStudent
+										? activeStudent.name
+										: user?.name || "Loading..."}
 								</h1>
 								<p className="text-gray-600 mt-2">ID: {user.id}</p>
 							</div>
@@ -337,7 +352,11 @@ export default function UserDetailPage() {
 							<div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
 								<div>
 									<div className="text-sm text-gray-500">Nama</div>
-									<div className="text-lg font-medium">{user.name}</div>
+									<div className="text-lg font-medium">
+										{isStudent && activeStudent
+											? activeStudent.name
+											: user.name}
+									</div>
 								</div>
 								<div>
 									<div className="text-sm text-gray-500">Email</div>
@@ -373,6 +392,31 @@ export default function UserDetailPage() {
 										{user.isActive ? "Aktif" : "Nonaktif"}
 									</span>
 								</div>
+								{isStudent && activeStudent?.gender && (
+									<div>
+										<div className="text-sm text-gray-500">Jenis Kelamin</div>
+										<div className="text-lg font-medium capitalize">
+											{activeStudent.gender === "male"
+												? "Laki-laki"
+												: "Perempuan"}
+										</div>
+									</div>
+								)}
+								{isStudent && activeStudent?.dateOfBirth && (
+									<div>
+										<div className="text-sm text-gray-500">Tanggal Lahir</div>
+										<div className="text-lg font-medium">
+											{new Date(activeStudent.dateOfBirth).toLocaleDateString(
+												"id-ID",
+												{
+													day: "numeric",
+													month: "long",
+													year: "numeric",
+												}
+											)}
+										</div>
+									</div>
+								)}
 							</div>
 						</div>
 						{/* Activities moved to right column */}
@@ -743,7 +787,9 @@ export default function UserDetailPage() {
 										</div>
 										<div>
 											<label className="block text-sm font-medium mb-2">
-												Email
+												Email{" "}
+												{(user.role === "teacher" || user.role === "student") &&
+													"(Opsional)"}
 											</label>
 											<input
 												type="email"
@@ -755,13 +801,13 @@ export default function UserDetailPage() {
 													})
 												}
 												className="input"
-												required
+												required={user.role === "admin"}
 											/>
 										</div>
 										{user.role === "student" && (
 											<div>
 												<label className="block text-sm font-medium mb-2">
-													NIS
+													Username (NIS)
 												</label>
 												<input
 													type="text"
@@ -773,13 +819,14 @@ export default function UserDetailPage() {
 														})
 													}
 													className="input"
+													placeholder="Nomor Induk Siswa"
 												/>
 											</div>
 										)}
 										{user.role === "teacher" && (
 											<div>
 												<label className="block text-sm font-medium mb-2">
-													NIP
+													Username (NIP)
 												</label>
 												<input
 													type="text"
@@ -791,6 +838,7 @@ export default function UserDetailPage() {
 														})
 													}
 													className="input"
+													placeholder="Nomor Induk Pegawai"
 												/>
 											</div>
 										)}
