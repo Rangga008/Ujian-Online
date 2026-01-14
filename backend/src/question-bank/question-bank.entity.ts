@@ -75,7 +75,7 @@ export class QuestionBank {
 	@Column({ nullable: true })
 	createdById: number;
 
-	@ManyToOne(() => User)
+	@ManyToOne(() => User, { onDelete: "SET NULL" })
 	@JoinColumn({ name: "createdById" })
 	createdBy: User;
 

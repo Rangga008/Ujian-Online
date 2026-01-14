@@ -2,6 +2,7 @@ import {
 	Controller,
 	Get,
 	Post,
+	Delete,
 	Body,
 	Param,
 	UseGuards,
@@ -23,11 +24,15 @@ export class SubmissionsController {
 	@Post("start/:examId")
 	@Roles(UserRole.STUDENT)
 	@UseGuards(RolesGuard)
-	async startExam(@Param("examId") examId: string, @Request() req) {
+	async startExam(
+		@Param("examId") examId: string,
+		@Body("token") token?: string,
+		@Request() req?: any
+	) {
 		const studentId = await this.submissionsService.getStudentIdFromUserId(
 			req.user.userId
 		);
-		return this.submissionsService.startExam(studentId, +examId);
+		return this.submissionsService.startExam(studentId, +examId, token);
 	}
 
 	@Post(":id/answer")
@@ -64,16 +69,18 @@ export class SubmissionsController {
 		return this.submissionsService.findByExam(+examId);
 	}
 
-	@Get(":id")
-	findOne(@Param("id") id: string) {
-		return this.submissionsService.findOne(+id);
-	}
-
 	@Post(":id/grade")
 	@Roles(UserRole.ADMIN, UserRole.TEACHER)
 	@UseGuards(RolesGuard)
 	async gradeSubmission(@Param("id") id: string, @Body() body: any) {
 		return this.submissionsService.gradeSubmission(+id, body);
+	}
+
+	@Delete(":id")
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
+	@UseGuards(RolesGuard)
+	async deleteSubmission(@Param("id") id: string) {
+		return this.submissionsService.delete(+id);
 	}
 
 	@Get("export")
@@ -92,5 +99,10 @@ export class SubmissionsController {
 			examId: examId ? Number(examId) : undefined,
 			studentId: studentId ? Number(studentId) : undefined,
 		});
+	}
+
+	@Get(":id")
+	findOne(@Param("id") id: string) {
+		return this.submissionsService.findOne(+id);
 	}
 }

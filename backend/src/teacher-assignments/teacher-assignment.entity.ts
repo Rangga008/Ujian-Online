@@ -16,7 +16,10 @@ export class TeacherAssignment {
 	@PrimaryGeneratedColumn()
 	id: number;
 
-	@ManyToOne(() => User, (u) => (u as any).teacherAssignments, { eager: true })
+	@ManyToOne(() => User, (u) => (u as any).teacherAssignments, {
+		eager: true,
+		onDelete: "CASCADE",
+	})
 	teacher: User;
 
 	@ManyToOne(() => Class, (c) => (c as any).teacherAssignments, { eager: true })

@@ -4,6 +4,7 @@ import api from "@/lib/api";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { format } from "date-fns";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 
 interface Exam {
 	id: string | number;
@@ -21,6 +22,7 @@ interface Exam {
 }
 
 export default function SearchPage() {
+	const { isAuthenticated } = useAuthGuard();
 	const [query, setQuery] = useState("");
 	const [exams, setExams] = useState<Exam[]>([]);
 	const [loading, setLoading] = useState(true);

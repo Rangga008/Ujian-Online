@@ -41,6 +41,11 @@ export class CreateQuestionDto {
 	@IsOptional()
 	@IsString()
 	imageUrl?: string;
+
+	@IsOptional()
+	@IsArray()
+	@IsString({ each: true })
+	optionImages?: string[];
 }
 
 export class CreateExamDto {
@@ -81,6 +86,10 @@ export class CreateExamDto {
 	showResultImmediately?: boolean;
 
 	@IsOptional()
+	@IsBoolean()
+	requireToken?: boolean;
+
+	@IsOptional()
 	@IsNumber()
 	classId?: number;
 
@@ -93,11 +102,11 @@ export class CreateExamDto {
 	grade?: string;
 
 	@IsOptional()
-	@IsNumber()
+	@IsNumber({}, { message: "semesterId must be a number" })
 	semesterId?: number;
 
 	@IsOptional()
-	@IsNumber()
+	@IsNumber({}, { message: "subjectId must be a number" })
 	subjectId?: number;
 
 	@IsOptional()
@@ -155,6 +164,10 @@ export class UpdateExamDto {
 	@IsOptional()
 	@IsBoolean()
 	showResultImmediately?: boolean;
+
+	@IsOptional()
+	@IsBoolean()
+	requireToken?: boolean;
 
 	@IsOptional()
 	@IsNumber()

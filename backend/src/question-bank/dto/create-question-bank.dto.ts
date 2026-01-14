@@ -9,7 +9,7 @@ import {
 import { QuestionType, DifficultyLevel } from "../question-bank.entity";
 
 export class CreateQuestionBankDto {
-	@IsNumber()
+	@IsNumber({}, { message: "subjectId must be a number" })
 	subjectId: number;
 
 	@IsString()
@@ -38,7 +38,7 @@ export class CreateQuestionBankDto {
 	@IsOptional()
 	tags?: string[];
 
-	@IsNumber()
+	@IsNumber({}, { message: "points must be a number" })
 	@IsOptional()
 	points?: number;
 

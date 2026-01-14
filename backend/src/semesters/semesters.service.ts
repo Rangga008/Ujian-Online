@@ -11,12 +11,21 @@ import { Semester } from "./semester.entity";
 import { CreateSemesterDto } from "./dto/create-semester.dto";
 import { UpdateSemesterDto } from "./dto/update-semester.dto";
 import { StudentsService } from "../students/students.service";
+import { Exam } from "../exams/exam.entity";
+import { Submission } from "../submissions/submission.entity";
+import { Class } from "../classes/class.entity";
 
 @Injectable()
 export class SemestersService {
 	constructor(
 		@InjectRepository(Semester)
 		private semesterRepository: Repository<Semester>,
+		@InjectRepository(Exam)
+		private examRepository: Repository<Exam>,
+		@InjectRepository(Submission)
+		private submissionRepository: Repository<Submission>,
+		@InjectRepository(Class)
+		private classRepository: Repository<Class>,
 		@Inject(forwardRef(() => StudentsService))
 		private studentsService: StudentsService
 	) {}
@@ -109,11 +118,52 @@ export class SemestersService {
 	}
 
 	async remove(id: number): Promise<void> {
-		const semester = await this.findOne(id);
+		const semester = await this.semesterRepository.findOne({
+			where: { id },
+			relations: ["exams", "students"],
+		});
+
+		if (!semester) {
+			throw new NotFoundException(`Semester with ID ${id} not found`);
+		}
 
 		if (semester.isActive) {
 			throw new ConflictException("Cannot delete the active semester");
 		}
+
+		// Check for exams in this semester
+		const examsCount = await this.examRepository.count({
+			where: { semesterId: id },
+		});
+
+		if (examsCount > 0) {
+			// Check if any exam has submissions
+			const submissionsCount = await this.submissionRepository
+				.createQueryBuilder("submission")
+				.innerJoin("submission.exam", "exam")
+				.where("exam.semesterId = :semesterId", { semesterId: id })
+				.getCount();
+
+			if (submissionsCount > 0) {
+				throw new ConflictException(
+					`Cannot delete semester with ${submissionsCount} active exam submission(s). Please delete or close related exams first.`
+				);
+			}
+
+			throw new ConflictException(
+				`Cannot delete semester with ${examsCount} exam(s). Please delete related exams first.`
+			);
+		}
+
+		// Check if semester has students
+		if (semester.students && semester.students.length > 0) {
+			throw new ConflictException(
+				`Cannot delete semester with ${semester.students.length} student record(s). Please reassign students to another semester first.`
+			);
+		}
+
+		// Clear semesterId from classes that reference this semester
+		await this.classRepository.update({ semesterId: id }, { semesterId: null });
 
 		await this.semesterRepository.remove(semester);
 	}

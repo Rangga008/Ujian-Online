@@ -5,12 +5,16 @@ import {
 	IsOptional,
 	IsEnum,
 	IsBoolean,
+	ValidateIf,
 } from "class-validator";
 import { UserRole } from "../user.entity";
 
 export class CreateUserDto {
+	@ValidateIf(
+		(o) => o.email !== undefined && o.email !== null && o.email !== ""
+	)
 	@IsEmail()
-	email: string;
+	email?: string; // Optional untuk teacher dan student
 
 	@IsString()
 	@MinLength(6)
@@ -24,17 +28,23 @@ export class CreateUserDto {
 
 	@IsOptional()
 	@IsString()
-	nis?: string; // For students
+	nis?: string; // Username untuk student
 
 	@IsOptional()
 	@IsString()
-	nip?: string; // For teachers
+	nip?: string; // Username untuk teacher
+
+	@IsOptional()
+	@IsString()
+	studentName?: string; // Actual student name (for role: student)
 }
 
 export class UpdateUserDto {
-	@IsOptional()
+	@ValidateIf(
+		(o) => o.email !== undefined && o.email !== null && o.email !== ""
+	)
 	@IsEmail()
-	email?: string;
+	email?: string; // Optional untuk teacher dan student
 
 	@IsOptional()
 	@IsString()
@@ -51,11 +61,11 @@ export class UpdateUserDto {
 
 	@IsOptional()
 	@IsString()
-	nis?: string;
+	nis?: string; // Username untuk student
 
 	@IsOptional()
 	@IsString()
-	nip?: string;
+	nip?: string; // Username untuk teacher
 
 	@IsOptional()
 	@IsBoolean()

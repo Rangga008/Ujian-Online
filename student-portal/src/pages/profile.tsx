@@ -1,10 +1,12 @@
 import Layout from "@/components/Layout";
 import { useRouter } from "next/router";
 import { useAuthStore } from "@/store/authStore";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 
 export default function ProfilePage() {
 	const router = useRouter();
 	const { user, logout } = useAuthStore();
+	const { isAuthenticated } = useAuthGuard();
 
 	const handleLogout = () => {
 		logout();
@@ -32,7 +34,7 @@ export default function ProfilePage() {
 									Nama Lengkap
 								</label>
 								<div className="mt-1 text-lg font-semibold text-gray-900">
-									{user?.name || "-"}
+									{user?.studentName || user?.name || "-"}
 								</div>
 							</div>
 
@@ -56,10 +58,12 @@ export default function ProfilePage() {
 
 							<div>
 								<label className="block text-sm font-medium text-gray-600">
-									Mapel yang Diampu
+									Mata Pelajaran
 								</label>
 								<div className="mt-1 text-lg text-gray-900">
-									{user?.jurusan || "-"}
+									{user?.class?.subjects && user.class.subjects.length > 0
+										? user.class.subjects.map((s) => s.name).join(", ")
+										: "-"}
 								</div>
 							</div>
 						</div>

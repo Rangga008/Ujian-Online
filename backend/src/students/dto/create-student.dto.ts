@@ -11,11 +11,11 @@ import { Gender } from "../student.entity";
 
 export class CreateStudentDto {
 	@IsNotEmpty()
-	@IsNumber()
+	@IsNumber({}, { message: "userId must be a number" })
 	userId: number;
 
 	@IsNotEmpty()
-	@IsNumber()
+	@IsNumber({}, { message: "semesterId must be a number" })
 	semesterId: number;
 
 	@IsNotEmpty()
@@ -23,7 +23,7 @@ export class CreateStudentDto {
 	name: string;
 
 	@IsOptional()
-	@IsNumber()
+	@IsNumber({}, { message: "classId must be a number" })
 	classId?: number;
 
 	@IsOptional()

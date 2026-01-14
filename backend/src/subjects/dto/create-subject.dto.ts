@@ -26,7 +26,10 @@ export class CreateSubjectDto {
 	isActive?: boolean;
 
 	@IsArray()
-	@IsNumber({}, { each: true })
+	@IsNumber(
+		{},
+		{ each: true, message: "teacherIds must be an array of numbers" }
+	)
 	@IsOptional()
 	teacherIds?: number[];
 }

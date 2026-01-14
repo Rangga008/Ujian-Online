@@ -41,6 +41,16 @@ export class ExamsController {
 	@UseGuards(RolesGuard)
 	@Roles(UserRole.ADMIN, UserRole.TEACHER)
 	create(@Body() createExamDto: CreateExamDto, @Request() req) {
+		console.log("🔵 POST /exams - Raw body received:");
+		console.log("📊 Request body questions[0]:", {
+			questionText: createExamDto.questions?.[0]?.questionText?.substring(
+				0,
+				30
+			),
+			type: createExamDto.questions?.[0]?.type,
+			optionImages: createExamDto.questions?.[0]?.optionImages,
+			allFields: Object.keys(createExamDto.questions?.[0] || {}),
+		});
 		return this.examsService.create(createExamDto, req.user?.id);
 	}
 
@@ -128,6 +138,13 @@ export class ExamsController {
 		return this.examsService.remove(+id, req.user?.id);
 	}
 
+	@Post(":id/generate-token")
+	@UseGuards(RolesGuard)
+	@Roles(UserRole.ADMIN, UserRole.TEACHER)
+	generateToken(@Param("id") id: string) {
+		return this.examsService.generateToken(+id);
+	}
+
 	// Question routes nested under exams
 	@Post(":examId/questions")
 	@UseGuards(RolesGuard)
@@ -158,6 +175,7 @@ export class ExamsController {
 				? JSON.parse(createQuestionDto.options)
 				: [],
 			imageUrl: file ? `/uploads/${file.filename}` : undefined,
+			optionImages: createQuestionDto.optionImages || [],
 		};
 		return this.questionsService.create(dto);
 	}
@@ -194,6 +212,7 @@ export class ExamsController {
 			imageUrl: file
 				? `/uploads/${file.filename}`
 				: updateQuestionDto.imageUrl || undefined,
+			optionImages: updateQuestionDto.optionImages || [],
 		};
 		return this.questionsService.update(+questionId, dto);
 	}

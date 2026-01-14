@@ -97,6 +97,12 @@ export class Exam {
 	showResultImmediately: boolean;
 
 	@Column({ nullable: true })
+	token?: string; // Optional token required to access exam
+
+	@Column({ default: false })
+	requireToken: boolean; // Whether token is required for this exam
+
+	@Column({ nullable: true })
 	imageUrl?: string;
 
 	@OneToMany(() => Question, (question) => question.exam)

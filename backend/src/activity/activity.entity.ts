@@ -23,7 +23,7 @@ export class Activity {
 	@Column()
 	userId: number;
 
-	@ManyToOne(() => User)
+	@ManyToOne(() => User, { onDelete: "SET NULL" })
 	@JoinColumn({ name: "userId" })
 	user: User;
 

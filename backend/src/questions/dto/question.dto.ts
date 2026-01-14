@@ -1,63 +1,77 @@
-import { IsString, IsNumber, IsEnum, IsArray, IsOptional } from 'class-validator';
-import { QuestionType } from '../question.entity';
+import {
+	IsString,
+	IsNumber,
+	IsEnum,
+	IsArray,
+	IsOptional,
+} from "class-validator";
+import { QuestionType } from "../question.entity";
 
 export class CreateQuestionDto {
-  @IsNumber()
-  examId: number;
+	@IsNumber({}, { message: "examId must be a number" })
+	examId: number;
 
-  @IsString()
-  questionText: string;
+	@IsString()
+	questionText: string;
 
-  @IsEnum(QuestionType)
-  type: QuestionType;
+	@IsEnum(QuestionType)
+	type: QuestionType;
 
-  @IsOptional()
-  @IsArray()
-  options?: string[];
+	@IsOptional()
+	@IsArray()
+	options?: string[];
 
-  @IsOptional()
-  @IsString()
-  correctAnswer?: string;
+	@IsOptional()
+	@IsArray()
+	optionImages?: string[];
 
-  @IsOptional()
-  @IsNumber()
-  points?: number;
+	@IsOptional()
+	@IsString()
+	correctAnswer?: string;
 
-  @IsOptional()
-  @IsString()
-  imageUrl?: string;
+	@IsOptional()
+	@IsNumber({}, { message: "points must be a number" })
+	points?: number;
 
-  @IsOptional()
-  @IsNumber()
-  orderIndex?: number;
+	@IsOptional()
+	@IsString()
+	imageUrl?: string;
+
+	@IsOptional()
+	@IsNumber({}, { message: "orderIndex must be a number" })
+	orderIndex?: number;
 }
 
 export class UpdateQuestionDto {
-  @IsOptional()
-  @IsString()
-  questionText?: string;
+	@IsOptional()
+	@IsString()
+	questionText?: string;
 
-  @IsOptional()
-  @IsEnum(QuestionType)
-  type?: QuestionType;
+	@IsOptional()
+	@IsEnum(QuestionType)
+	type?: QuestionType;
 
-  @IsOptional()
-  @IsArray()
-  options?: string[];
+	@IsOptional()
+	@IsArray()
+	options?: string[];
 
-  @IsOptional()
-  @IsString()
-  correctAnswer?: string;
+	@IsOptional()
+	@IsArray()
+	optionImages?: string[];
 
-  @IsOptional()
-  @IsNumber()
-  points?: number;
+	@IsOptional()
+	@IsString()
+	correctAnswer?: string;
 
-  @IsOptional()
-  @IsString()
-  imageUrl?: string;
+	@IsOptional()
+	@IsNumber({}, { message: "points must be a number" })
+	points?: number;
 
-  @IsOptional()
-  @IsNumber()
-  orderIndex?: number;
+	@IsOptional()
+	@IsString()
+	imageUrl?: string;
+
+	@IsOptional()
+	@IsNumber({}, { message: "orderIndex must be a number" })
+	orderIndex?: number;
 }

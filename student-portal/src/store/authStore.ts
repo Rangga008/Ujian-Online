@@ -2,15 +2,23 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import api from "@/lib/api";
 
+interface Subject {
+	id: number;
+	name: string;
+}
+
 interface Class {
 	id: number;
 	name: string;
 	grade?: string;
+	major?: string;
+	subjects?: Subject[];
 }
 
 interface User {
 	id: number;
 	name: string;
+	studentName?: string; // Nama sebenarnya dari student record
 	nis: string;
 	kelas?: string; // Class name string
 	jurusan?: string;

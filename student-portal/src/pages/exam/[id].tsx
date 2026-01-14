@@ -4,13 +4,18 @@ import Layout from "@/components/Layout";
 import api from "@/lib/api";
 import toast from "react-hot-toast";
 import { format } from "date-fns";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 
 export default function ExamPage() {
 	const router = useRouter();
 	const { id } = router.query;
+	const { isAuthenticated } = useAuthGuard();
 
 	const [exam, setExam] = useState<any>(null);
 	const [loading, setLoading] = useState(true);
+	const [showTokenModal, setShowTokenModal] = useState(false);
+	const [tokenInput, setTokenInput] = useState("");
+	const [submittingWithToken, setSubmittingWithToken] = useState(false);
 
 	useEffect(() => {
 		if (id) fetchExam();
@@ -29,15 +34,45 @@ export default function ExamPage() {
 		}
 	};
 
-	const handleStart = async () => {
+	const startExam = async (token?: string) => {
 		try {
-			const res = await api.post(`/submissions/start/${id}`);
+			const payload = token ? { token } : {};
+			const res = await api.post(`/submissions/start/${id}`, payload);
 			const sub = res.data;
 			router.push(`/exam/${id}/take?submissionId=${sub.id}`);
 		} catch (err: any) {
 			const msg = err?.response?.data?.message || "Gagal memulai ujian";
 			toast.error(msg);
 		}
+	};
+
+	const handleStart = async () => {
+		if (exam.requireToken) {
+			setShowTokenModal(true);
+		} else {
+			await startExam();
+		}
+	};
+
+	const handleSubmitToken = async () => {
+		if (!tokenInput.trim()) {
+			toast.error("Token tidak boleh kosong");
+			return;
+		}
+
+		setSubmittingWithToken(true);
+		try {
+			await startExam(tokenInput.trim());
+		} finally {
+			setSubmittingWithToken(false);
+			setTokenInput("");
+			setShowTokenModal(false);
+		}
+	};
+
+	const handleCloseTokenModal = () => {
+		setShowTokenModal(false);
+		setTokenInput("");
 	};
 
 	if (loading) {
@@ -115,6 +150,48 @@ export default function ExamPage() {
 						</button>
 					</div>
 				</div>
+
+				{/* Token Input Modal */}
+				{showTokenModal && (
+					<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+						<div className="bg-white rounded-lg p-6 shadow-xl max-w-sm mx-4">
+							<h2 className="text-lg font-bold mb-3">Token Ujian Diperlukan</h2>
+							<p className="text-sm text-gray-600 mb-4">
+								Ujian ini memerlukan token untuk memulai. Silakan masukkan token
+								yang diberikan oleh guru.
+							</p>
+							<input
+								type="text"
+								value={tokenInput}
+								onChange={(e) => setTokenInput(e.target.value.toUpperCase())}
+								onKeyPress={(e) => {
+									if (e.key === "Enter") handleSubmitToken();
+								}}
+								placeholder="Masukkan token (misal: A1B2C3)"
+								className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+								maxLength={10}
+								disabled={submittingWithToken}
+								autoFocus
+							/>
+							<div className="flex gap-3 justify-end">
+								<button
+									onClick={handleCloseTokenModal}
+									className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+									disabled={submittingWithToken}
+								>
+									Batal
+								</button>
+								<button
+									onClick={handleSubmitToken}
+									className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+									disabled={submittingWithToken}
+								>
+									{submittingWithToken ? "Memproses..." : "Lanjutkan"}
+								</button>
+							</div>
+						</div>
+					</div>
+				)}
 			</div>
 		</Layout>
 	);

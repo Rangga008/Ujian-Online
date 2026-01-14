@@ -11,6 +11,7 @@ import {
 import { Class } from "../classes/class.entity";
 import { Subject } from "../subjects/subject.entity";
 import { Student } from "../students/student.entity";
+import { TeacherAssignment } from "../teacher-assignments/teacher-assignment.entity";
 
 export enum UserRole {
 	ADMIN = "admin",
@@ -23,7 +24,7 @@ export class User {
 	@PrimaryGeneratedColumn()
 	id: number;
 
-	@Column({ unique: true })
+	@Column({ unique: true, nullable: true })
 	email: string;
 
 	@Column({ unique: true, nullable: true })
@@ -63,6 +64,9 @@ export class User {
 
 	@ManyToMany(() => Class, (classEntity) => classEntity.teachers)
 	teachingClasses: Class[];
+
+	@OneToMany(() => TeacherAssignment, (ta) => ta.teacher)
+	teacherAssignments: TeacherAssignment[];
 
 	@CreateDateColumn()
 	createdAt: Date;

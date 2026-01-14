@@ -7,16 +7,37 @@ import { getAssetUrl } from "@/lib/imageUrl";
 
 export default function LoginPage() {
 	const router = useRouter();
-	const { login, isAuthenticated } = useAuthStore();
+	const { login, isAuthenticated, logout } = useAuthStore();
 	const [nis, setNis] = useState("");
 	const [password, setPassword] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
+	const [isReady, setIsReady] = useState(false);
 
+	// Check token validity and listen for storage changes
 	useEffect(() => {
-		if (isAuthenticated) {
+		setIsReady(true);
+
+		// Listen for storage changes (token cleared by API interceptor)
+		const handleStorageChange = () => {
+			const token = localStorage.getItem("student_token");
+			if (!token && isAuthenticated) {
+				logout();
+			}
+		};
+
+		window.addEventListener("storage", handleStorageChange);
+		return () => window.removeEventListener("storage", handleStorageChange);
+	}, [isAuthenticated, logout]);
+
+	// Redirect to dashboard if authenticated and token exists
+	useEffect(() => {
+		if (!isReady || !router.isReady) return;
+
+		const token = localStorage.getItem("student_token");
+		if (isAuthenticated && token) {
 			router.push("/dashboard");
 		}
-	}, [isAuthenticated, router]);
+	}, [isAuthenticated, router, isReady]);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();

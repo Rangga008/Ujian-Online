@@ -278,23 +278,30 @@ export const parseHtmlTablesToQuestions = (
 				let options: string[] = [];
 				let correctAnswer = "";
 				let imageSrc: string | undefined;
-				let optionImages: { preview: string; base64: string }[] = [];
+				const optionImagesMap = new Map<
+					number,
+					{ preview: string; base64: string }
+				>();
 
+				// First pass: extract question text, correct answer, and question image
 				for (const row of questionRows) {
 					const cells = Array.from(row.querySelectorAll("td, th"));
 					if (cells.length < 2) continue;
 
+					// Get question text from "Isi" column (index 2)
 					if (!questionText && cells.length >= 4) {
 						const contentCell = cells[2];
 						const text = (contentCell.textContent || "").trim();
 						if (text && text.length > 5 && text !== "SOAL") {
 							questionText = text;
+							// Extract question image (if any) from content cell
 							const img = contentCell.querySelector("img");
 							if (img?.getAttribute("src"))
 								imageSrc = img.getAttribute("src") || undefined;
 						}
 					}
 
+					// Get correct answer from "Jawaban" column (index 3)
 					if (cells.length >= 4 && !correctAnswer) {
 						const answerCell = cells[3];
 						const text = (answerCell.textContent || "").trim();
@@ -304,6 +311,7 @@ export const parseHtmlTablesToQuestions = (
 					}
 				}
 
+				// Second pass: extract options text
 				const mcOptions: string[] = [];
 				const tfOptions: string[] = [];
 
@@ -317,7 +325,7 @@ export const parseHtmlTablesToQuestions = (
 							!mcOptions.includes(optionText)
 						) {
 							const cleaned = optionText.replace(/^[A-E]\.\s*/, "").trim();
-							if (cleaned) mcOptions.push(cleaned);
+							mcOptions.push(cleaned); // Allow empty string for photo-only options
 						}
 
 						if (
@@ -329,30 +337,47 @@ export const parseHtmlTablesToQuestions = (
 					});
 				}
 
+				// Third pass: extract images for each option by row position
+				// Important: Map images to options by their position in the table rows
 				for (const row of questionRows) {
 					const cells = Array.from(row.querySelectorAll("td, th"));
+
+					// Look for option cells (cells with "A.", "B.", etc.) or option image cells
+					let currentOptionIndex = -1;
+
 					for (let cellIdx = 0; cellIdx < cells.length; cellIdx++) {
 						const cell = cells[cellIdx];
 						const cellText = (cell.textContent || "").trim();
-						if (
-							/^[A-E]\./.test(cellText) ||
-							/^(BENAR|SALAH)$/.test(cellText)
-						) {
-							const img = cell.querySelector("img");
-							if (img?.getAttribute("src")) {
-								const imgSrc = img.getAttribute("src") || "";
-								if (/^[A-E]\./.test(cellText)) {
-									const letter = cellText.charAt(0);
-									const idx = letter.charCodeAt(0) - 65;
-									while (optionImages.length <= idx) {
-										optionImages.push({ preview: "", base64: "" });
-									}
-									optionImages[idx] = {
-										preview: imgSrc,
-										base64: imgSrc.startsWith("data:") ? imgSrc : "",
-									};
-								}
-							}
+
+						// Detect option marker (A., B., C., D., E., BENAR, SALAH)
+						const optionMatch = cellText.match(/^([A-E])\./);
+						if (optionMatch) {
+							currentOptionIndex = optionMatch[1].charCodeAt(0) - 65;
+						}
+
+						// Check for images in this cell
+						const img = cell.querySelector("img");
+						if (img?.getAttribute("src") && currentOptionIndex >= 0) {
+							const imgSrc = img.getAttribute("src") || "";
+							optionImagesMap.set(currentOptionIndex, {
+								preview: imgSrc,
+								base64: imgSrc.startsWith("data:") ? imgSrc : "",
+							});
+						}
+					}
+				}
+
+				// Handle text/photo-only option inconsistency
+				// If options were extracted but some are empty, fill array to match
+				if (mcOptions.length > 0) {
+					// Ensure we have an option slot for each image position
+					const maxImageIndex = Math.max(
+						...Array.from(optionImagesMap.keys()),
+						-1
+					);
+					if (maxImageIndex >= 0) {
+						while (mcOptions.length <= maxImageIndex) {
+							mcOptions.push(""); // Add empty slots for photo-only options
 						}
 					}
 				}
@@ -426,16 +451,29 @@ export const parseHtmlTablesToQuestions = (
 					points: points > 0 ? points : 1,
 					orderIndex: existingQuestionsCount + parsed.length,
 					imageFile: null,
-					imageUrl: "",
+					imageUrl: imageSrc || "",
 				};
 
-				if (optionImages.some((img) => img.preview)) {
-					questionObj.optionImages = optionImages
-						.filter((img) => img.preview)
-						.map((img) => img.base64 || img.preview);
-					questionObj.optionImagePreviews = optionImages
-						.filter((img) => img.preview)
-						.map((img) => img.preview);
+				// Add option images from map
+				if (optionImagesMap.size > 0) {
+					const optionImagesArray: string[] = [];
+					const optionImagePreviewsArray: string[] = [];
+
+					for (let i = 0; i < resolvedOptions.length; i++) {
+						const imgData = optionImagesMap.get(i);
+						if (imgData) {
+							optionImagesArray.push(imgData.base64 || imgData.preview);
+							optionImagePreviewsArray.push(imgData.preview);
+						} else {
+							optionImagesArray.push("");
+							optionImagePreviewsArray.push("");
+						}
+					}
+
+					if (optionImagesArray.some((img) => img)) {
+						questionObj.optionImages = optionImagesArray;
+						questionObj.optionImagePreviews = optionImagePreviewsArray;
+					}
 				}
 
 				parsed.push(questionObj);

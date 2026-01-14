@@ -6,12 +6,21 @@ import { ExamsController } from "./exams.controller";
 import { Semester } from "../semesters/semester.entity";
 import { Class } from "../classes/class.entity";
 import { Question } from "../questions/question.entity";
+import { Student } from "../students/student.entity";
+import { Submission } from "../submissions/submission.entity";
 import { QuestionsService } from "../questions/questions.service";
 import { ActivityModule } from "../activity/activity.module";
 
 @Module({
 	imports: [
-		TypeOrmModule.forFeature([Exam, Semester, Class, Question]),
+		TypeOrmModule.forFeature([
+			Exam,
+			Semester,
+			Class,
+			Question,
+			Student,
+			Submission,
+		]),
 		ActivityModule,
 	],
 	providers: [ExamsService, QuestionsService],

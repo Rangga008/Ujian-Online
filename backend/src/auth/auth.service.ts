@@ -55,6 +55,7 @@ export class AuthService {
 				id: user.id,
 				email: user.email,
 				name: user.name,
+				studentName: user.studentName, // Actual student name
 				role: user.role,
 				nis: user.nis,
 				kelas: user.kelas,
@@ -77,10 +78,10 @@ export class AuthService {
 			throw new UnauthorizedException("Akun ini bukan akun siswa");
 		}
 
-		// Fetch student info with class
+		// Fetch student info with class and subjects
 		const student = await this.studentsRepository.findOne({
 			where: { userId: user.id },
-			relations: ["class", "semester"],
+			relations: ["class", "class.subjects", "semester"],
 		});
 
 		console.log(
@@ -90,7 +91,9 @@ export class AuthService {
 		// Add student and class info to user object
 		const userWithClass = {
 			...user,
+			studentName: student?.name, // Nama sebenarnya siswa
 			kelas: student?.class?.name,
+			jurusan: student?.class?.major, // Mapel/Jurusan dari class
 			class: student?.class,
 			classId: student?.classId,
 			semester: student?.semester,

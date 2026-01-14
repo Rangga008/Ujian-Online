@@ -36,13 +36,15 @@ export class UsersService {
 	) {}
 
 	async create(createUserDto: CreateUserDto): Promise<User> {
-		// Check for unique email
-		const existingByEmail = await this.usersRepository.findOne({
-			where: { email: createUserDto.email },
-		});
+		// Check for unique email (if provided)
+		if (createUserDto.email) {
+			const existingByEmail = await this.usersRepository.findOne({
+				where: { email: createUserDto.email },
+			});
 
-		if (existingByEmail) {
-			throw new ConflictException("Email already exists");
+			if (existingByEmail) {
+				throw new ConflictException("Email already exists");
+			}
 		}
 
 		// Check NIS duplicate for students
@@ -79,7 +81,10 @@ export class UsersService {
 
 		// Auto-create Student record for student role in active semester
 		if (savedUser.role === UserRole.STUDENT) {
-			await this.createStudentRecordForActiveSemester(savedUser.id);
+			await this.createStudentRecordForActiveSemester(
+				savedUser.id,
+				createUserDto.studentName
+			);
 		}
 
 		return savedUser;
@@ -132,7 +137,8 @@ export class UsersService {
 	}
 
 	private async createStudentRecordForActiveSemester(
-		userId: number
+		userId: number,
+		studentName?: string
 	): Promise<void> {
 		const activeSemester = await this.semestersRepository.findOne({
 			where: { isActive: true },
@@ -169,7 +175,7 @@ export class UsersService {
 		const student = this.studentsRepository.create({
 			userId,
 			semesterId: activeSemester.id,
-			name: user.name, // Use user's name
+			name: studentName || user.name, // Use provided studentName, fallback to user.name
 			isActive: true,
 		});
 
@@ -180,17 +186,48 @@ export class UsersService {
 		const where: any = {};
 		if (role) where.role = role;
 
-		const relations = ["students"] as const;
+		const relations = [
+			"students",
+			"students.class",
+			"students.semester",
+		] as const;
 		// Include teachingClasses when fetching teachers so UI can prefill wali
 		if (!role || role === UserRole.TEACHER) {
 			(relations as any).push("teachingClasses");
+			(relations as any).push("teacherAssignments");
+			(relations as any).push("teacherAssignments.semester");
+			(relations as any).push("teacherAssignments.cls");
 		}
 
-		return this.usersRepository.find({
+		const users = await this.usersRepository.find({
 			where,
 			relations: relations as any,
 			order: { name: "ASC" },
 		});
+
+		// For teachers, enrich teachingClasses with semesterId from teacherAssignments
+		if (!role || role === UserRole.TEACHER) {
+			users.forEach((user) => {
+				if (user.teacherAssignments && user.teacherAssignments.length > 0) {
+					// Use teacherAssignments as source of truth - include semesterId from assignments
+					const enrichedClasses = user.teacherAssignments.map((ta) => {
+						const cls = ta.cls;
+						(cls as any).semesterId = ta.semester?.id;
+						return cls;
+					});
+					// Add back any teachingClasses that might not be in assignments (legacy)
+					const assignedClassIds = new Set(enrichedClasses.map((c) => c.id));
+					user.teachingClasses = [
+						...enrichedClasses,
+						...(user.teachingClasses || []).filter(
+							(c) => !assignedClassIds.has(c.id)
+						),
+					];
+				}
+			});
+		}
+
+		return users;
 	}
 
 	async findOne(id: number): Promise<User> {
@@ -201,11 +238,33 @@ export class UsersService {
 				"students.semester",
 				"students.class",
 				"teachingClasses",
+				"teacherAssignments",
+				"teacherAssignments.semester",
+				"teacherAssignments.cls",
 			],
 		});
 		if (!user) {
 			throw new NotFoundException("User not found");
 		}
+
+		// Enrich teachingClasses with semesterId from teacherAssignments
+		if (user.teacherAssignments && user.teacherAssignments.length > 0) {
+			// Use teacherAssignments as source of truth - include semesterId from assignments
+			const enrichedClasses = user.teacherAssignments.map((ta) => {
+				const cls = ta.cls;
+				(cls as any).semesterId = ta.semester?.id;
+				return cls;
+			});
+			// Add back any teachingClasses that might not be in assignments (legacy)
+			const assignedClassIds = new Set(enrichedClasses.map((c) => c.id));
+			user.teachingClasses = [
+				...enrichedClasses,
+				...(user.teachingClasses || []).filter(
+					(c) => !assignedClassIds.has(c.id)
+				),
+			];
+		}
+
 		return user;
 	}
 
@@ -285,6 +344,22 @@ export class UsersService {
 		if (user.students && user.students.length > 0) {
 			await this.studentsRepository.remove(user.students);
 		}
+
+		// Delete from teacher_subjects join table (many-to-many)
+		await this.usersRepository
+			.createQueryBuilder()
+			.delete()
+			.from("teacher_subjects")
+			.where("teacherId = :teacherId", { teacherId: id })
+			.execute();
+
+		// Delete from class_teachers join table (many-to-many)
+		await this.usersRepository
+			.createQueryBuilder()
+			.delete()
+			.from("class_teachers")
+			.where("teacherId = :teacherId", { teacherId: id })
+			.execute();
 
 		await this.usersRepository.remove(user);
 	}

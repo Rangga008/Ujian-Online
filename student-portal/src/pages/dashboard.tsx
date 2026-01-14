@@ -4,6 +4,7 @@ import api from "@/lib/api";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { format } from "date-fns";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 
 interface ActiveExam {
 	id: string | number;
@@ -26,6 +27,7 @@ interface Submission {
 }
 
 export default function DashboardPage() {
+	const { isAuthenticated } = useAuthGuard();
 	const [activeExams, setActiveExams] = useState<ActiveExam[]>([]);
 	const [mySubmissions, setMySubmissions] = useState<Submission[]>([]);
 	const [loading, setLoading] = useState(true);

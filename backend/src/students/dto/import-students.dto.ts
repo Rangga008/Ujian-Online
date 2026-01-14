@@ -1,10 +1,10 @@
 import { IsNumber, IsOptional, IsString } from "class-validator";
 
 export class ImportStudentsDto {
-	@IsNumber()
+	@IsNumber({}, { message: "semesterId must be a number" })
 	semesterId: number;
 
 	@IsOptional()
-	@IsNumber()
+	@IsNumber({}, { message: "classId must be a number" })
 	classId?: number;
 }

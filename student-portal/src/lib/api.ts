@@ -26,9 +26,17 @@ api.interceptors.response.use(
 	(response) => response,
 	(error) => {
 		if (error.response?.status === 401) {
+			// Clear localStorage
 			localStorage.removeItem("student_token");
 			localStorage.removeItem("student_user");
-			window.location.href = "/login";
+
+			// Redirect to login only if not already there
+			if (
+				typeof window !== "undefined" &&
+				!window.location.pathname.includes("/login")
+			) {
+				window.location.href = "/login";
+			}
 		}
 		return Promise.reject(error);
 	}

@@ -22,7 +22,9 @@ export default function DesktopNav() {
 			<div className="p-6 space-y-4">
 				<div className="mb-8 pb-6 border-b border-blue-400">
 					<div className="text-2xl font-bold">Portal Siswa</div>
-					<div className="text-sm text-blue-100 mt-2">{user?.name}</div>
+					<div className="text-sm text-blue-100 mt-2">
+						{user?.studentName || user?.name}
+					</div>
 					<div className="text-xs text-blue-200">NIS: {user?.nis}</div>
 				</div>
 

@@ -1,32 +1,45 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
-import { Submission } from './submission.entity';
-import { Question } from '../questions/question.entity';
+import {
+	Entity,
+	PrimaryGeneratedColumn,
+	Column,
+	ManyToOne,
+	JoinColumn,
+} from "typeorm";
+import { Submission } from "./submission.entity";
+import { Question } from "../questions/question.entity";
 
-@Entity('answers')
+@Entity("answers")
 export class Answer {
-  @PrimaryGeneratedColumn()
-  id: number;
+	@PrimaryGeneratedColumn()
+	id: number;
 
-  @Column()
-  submissionId: number;
+	@Column()
+	submissionId: number;
 
-  @ManyToOne(() => Submission, (submission) => submission.answers, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'submissionId' })
-  submission: Submission;
+	@ManyToOne(() => Submission, (submission) => submission.answers, {
+		onDelete: "CASCADE",
+	})
+	@JoinColumn({ name: "submissionId" })
+	submission: Submission;
 
-  @Column()
-  questionId: number;
+	@Column()
+	questionId: number;
 
-  @ManyToOne(() => Question, (question) => question.answers)
-  @JoinColumn({ name: 'questionId' })
-  question: Question;
+	@ManyToOne(() => Question, (question) => question.answers, {
+		onDelete: "CASCADE",
+	})
+	@JoinColumn({ name: "questionId" })
+	question: Question;
 
-  @Column({ type: 'text', nullable: true })
-  answer: string;
+	@Column({ type: "text", nullable: true })
+	answer: string;
 
-  @Column({ default: false })
-  isCorrect: boolean;
+	@Column({ type: "text", nullable: true })
+	answerImageUrl?: string; // URL for answer submitted as image/photo
 
-  @Column({ type: 'float', default: 0 })
-  points: number;
+	@Column({ default: false })
+	isCorrect: boolean;
+
+	@Column({ type: "float", default: 0 })
+	points: number;
 }

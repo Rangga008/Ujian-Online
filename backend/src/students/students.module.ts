@@ -7,11 +7,12 @@ import { Student } from "./student.entity";
 import { User } from "../users/user.entity";
 import { Semester } from "../semesters/semester.entity";
 import { Class } from "../classes/class.entity";
+import { Submission } from "../submissions/submission.entity";
 import { SemestersModule } from "../semesters/semester.module";
 
 @Module({
 	imports: [
-		TypeOrmModule.forFeature([Student, User, Semester, Class]),
+		TypeOrmModule.forFeature([Student, User, Semester, Class, Submission]),
 		forwardRef(() => SemestersModule),
 		MulterModule.register({
 			limits: {

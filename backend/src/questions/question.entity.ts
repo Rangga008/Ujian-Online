@@ -14,6 +14,7 @@ export enum QuestionType {
 	MIXED_MULTIPLE_CHOICE = "mixed_multiple_choice",
 	TRUE_FALSE = "true_false",
 	ESSAY = "essay",
+	PHOTO_ANSWER = "photo_answer", // New type for photo-based answers
 }
 
 @Entity("questions")
@@ -41,6 +42,9 @@ export class Question {
 	@Column({ type: "json", nullable: true })
 	options: string[]; // For multiple choice questions
 
+	@Column({ type: "json", nullable: true })
+	optionImages: string[]; // URLs for option images (A, B, C, D, E)
+
 	@Column({ nullable: true })
 	correctAnswer: string;
 
@@ -49,6 +53,9 @@ export class Question {
 
 	@Column({ nullable: true })
 	imageUrl: string;
+
+	@Column({ default: false })
+	allowPhotoAnswer?: boolean; // Allow student to submit photo for this question
 
 	@Column({ default: 0 })
 	orderIndex: number;

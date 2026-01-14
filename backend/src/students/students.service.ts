@@ -11,6 +11,7 @@ import { UpdateStudentDto } from "./dto/update-student.dto";
 import { User, UserRole } from "../users/user.entity";
 import { Semester } from "../semesters/semester.entity";
 import { Class } from "../classes/class.entity";
+import { Submission } from "../submissions/submission.entity";
 
 @Injectable()
 export class StudentsService {
@@ -22,7 +23,9 @@ export class StudentsService {
 		@InjectRepository(Semester)
 		private semestersRepository: Repository<Semester>,
 		@InjectRepository(Class)
-		private classesRepository: Repository<Class>
+		private classesRepository: Repository<Class>,
+		@InjectRepository(Submission)
+		private submissionRepository: Repository<Submission>
 	) {}
 
 	async create(createStudentDto: CreateStudentDto): Promise<Student> {
@@ -192,6 +195,11 @@ export class StudentsService {
 
 	async remove(id: number): Promise<void> {
 		const student = await this.findOne(id);
+
+		// Delete all submissions for this student first
+		await this.submissionRepository.delete({ studentId: student.id });
+
+		// Then delete the student
 		await this.studentsRepository.remove(student);
 	}
 
@@ -264,32 +272,39 @@ export class StudentsService {
 
 			try {
 				const name = row["Nama"]?.toString().trim();
-				const email = row["Email"]?.toString().trim().toLowerCase();
+				const email = row["Email"]?.toString().trim().toLowerCase() || null;
 				const nis = row["NIS"]?.toString().trim();
 				const password = row["Password"]?.toString().trim();
 
-				// Validate required fields
-				if (!name || !email || !nis || !password) {
+				// Validate required fields (email is optional now)
+				if (!name || !nis || !password) {
 					errors.push(
-						`Baris ${rowNumber}: Data tidak lengkap (${!name ? "Nama, " : ""}${!email ? "Email, " : ""}${!nis ? "NIS, " : ""}${!password ? "Password" : ""})`
+						`Baris ${rowNumber}: Data tidak lengkap (${!name ? "Nama, " : ""}${!nis ? "NIS, " : ""}${!password ? "Password" : ""})`
 					);
 					failed++;
 					continue;
 				}
 
-				// Validate email format
-				const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-				if (!emailRegex.test(email)) {
-					errors.push(
-						`Baris ${rowNumber}: Format email tidak valid (${email})`
-					);
-					failed++;
-					continue;
+				// Validate email format only if provided
+				if (email) {
+					const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+					if (!emailRegex.test(email)) {
+						errors.push(
+							`Baris ${rowNumber}: Format email tidak valid (${email})`
+						);
+						failed++;
+						continue;
+					}
 				}
 
-				// Check if user already exists
+				// Check if user already exists by email (if provided) or NIS
+				const whereConditions: any = [{ nis }];
+				if (email) {
+					whereConditions.push({ email });
+				}
+
 				let user = await this.usersRepository.findOne({
-					where: [{ email }, { nis }],
+					where: whereConditions,
 				});
 
 				if (user) {

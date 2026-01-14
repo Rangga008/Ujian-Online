@@ -9,6 +9,8 @@ import { Submission, SubmissionStatus } from "./submission.entity";
 import { Answer } from "./answer.entity";
 import { CreateSubmissionDto, SubmitAnswerDto } from "./dto/submission.dto";
 import { QuestionsService } from "../questions/questions.service";
+import { ExamsService } from "../exams/exams.service";
+import { QuestionType } from "../questions/question.entity";
 import { Student } from "../students/student.entity";
 import { Semester } from "../semesters/semester.entity";
 
@@ -23,10 +25,24 @@ export class SubmissionsService {
 		private studentRepository: Repository<Student>,
 		@InjectRepository(Semester)
 		private semesterRepository: Repository<Semester>,
-		private questionsService: QuestionsService
+		private questionsService: QuestionsService,
+		private examsService: ExamsService
 	) {}
 
-	async startExam(studentId: number, examId: number): Promise<Submission> {
+	async startExam(
+		studentId: number,
+		examId: number,
+		token?: string
+	): Promise<Submission> {
+		// Validate token if exam requires it
+		const isTokenValid = await this.examsService.validateToken(
+			examId,
+			token || ""
+		);
+		if (!isTokenValid) {
+			throw new BadRequestException("Invalid or missing exam token");
+		}
+
 		// If there's an in-progress submission, resume it
 		const existingInProgress = await this.submissionsRepository.findOne({
 			where: { studentId, examId, status: SubmissionStatus.IN_PROGRESS },
@@ -83,18 +99,156 @@ export class SubmissionsService {
 			},
 		});
 
-		const isCorrect = question.correctAnswer === submitAnswerDto.answer;
+		// Handle photo answers
+		if (submitAnswerDto.photoAnswer) {
+			// For photo answers, store the photo URL/data directly
+			if (!answer) {
+				answer = this.answersRepository.create({
+					submissionId,
+					questionId: submitAnswerDto.questionId,
+					answer: null, // No text answer for photo
+					answerImageUrl: submitAnswerDto.photoAnswer,
+					isCorrect: false, // Photo answers need manual grading
+					points: 0,
+				});
+			} else {
+				answer.answerImageUrl = submitAnswerDto.photoAnswer;
+				answer.isCorrect = false; // Reset correctness since answer changed
+				answer.points = 0;
+			}
+			return this.answersRepository.save(answer);
+		}
+
+		// Tolerant comparison: normalize strings, handle multi-select and true/false variants
+		// Ensure answer is converted to a string for comparison and storage
+		const rawAnswer = (submitAnswerDto as any).answer;
+		const storedAnswerValue =
+			rawAnswer === null || rawAnswer === undefined
+				? null
+				: typeof rawAnswer === "string"
+					? rawAnswer
+					: JSON.stringify(rawAnswer);
+
+		const normalize = (s?: string) => {
+			let t = (s ?? "").toString().replace(/\s+/g, " ").trim();
+			// Remove surrounding quotes/backticks if present
+			t = t.replace(/^(["'`]+)|(["'`]+)$/g, "");
+			// Remove common checkmark/tick characters and other visual markers
+			t = t.replace(
+				/[\u2713\u2714\u2715\u2716\u2717\u2718\u2719\u271A\u271B\u271C\u271D\u271E\u271F\u2720\u2712\u2711√✓✔✗✘]/g,
+				""
+			);
+			return t.toLowerCase();
+		};
+
+		let isCorrect = false;
+		// keep the raw string for multi-select parsing
+		const rawGiven = storedAnswerValue ?? "";
+		// normalized single-value answer for non-multiple parsing
+		const given = normalize(rawGiven);
+		// Prepare canonical correct answer for comparison. For multiple_choice, support
+		// numeric indices or single-letter tokens by mapping them to the option text when possible.
+		let correct = normalize(question.correctAnswer);
+		if (question.type === QuestionType.MULTIPLE_CHOICE) {
+			// If correct looks like a numeric index and options are available, map to option text
+			if (/^\d+$/.test(correct) && Array.isArray(question.options)) {
+				const idx = Number(correct);
+				if (idx >= 0 && idx < question.options.length) {
+					correct = normalize(question.options[idx]);
+				}
+			} else if (
+				/^[A-Za-z]$/.test(correct) &&
+				Array.isArray(question.options)
+			) {
+				const idx = correct.toUpperCase().charCodeAt(0) - 65;
+				if (idx >= 0 && idx < question.options.length) {
+					correct = normalize(question.options[idx]);
+				}
+			}
+		}
+
+		if (question.type === QuestionType.MIXED_MULTIPLE_CHOICE) {
+			const parseTokens = (str: string) => {
+				const raw = (str || "").toString().trim();
+				if (!raw) return [] as string[];
+
+				// First check if it's a JSON array (from Flutter or other clients)
+				if (raw.startsWith("[") && raw.endsWith("]")) {
+					try {
+						const parsed = JSON.parse(raw);
+						if (Array.isArray(parsed)) {
+							return parsed.map((p) => normalize(String(p)));
+						}
+					} catch (e) {
+						// Not valid JSON, continue with other parsing
+					}
+				}
+
+				// If tokens are purely numeric (e.g. "0,2" or "1,3"), map to option texts when possible
+				if (/^\s*\d+(\s*,\s*\d+)*\s*$/.test(raw)) {
+					const nums = raw
+						.split(/\s*,\s*/)
+						.map((n) => Number(n))
+						.filter((n) => !Number.isNaN(n));
+					if (Array.isArray(question.options) && question.options.length > 0) {
+						return nums
+							.map((idx) => question.options[idx])
+							.filter(Boolean)
+							.map((p) => normalize(p));
+					}
+					return nums.map((n) => String(n));
+				}
+
+				// Otherwise split on commas (and tolerate other separators) and normalize
+				return raw
+					.split(/[;,|\/]+|\s*,\s*/)
+					.map((p) => p.trim())
+					.filter(Boolean)
+					.map((p) => normalize(p));
+			};
+
+			// Parse tokens from the original stored strings (don't use pre-normalized values)
+			const a = parseTokens(question.correctAnswer as string).sort();
+			const b = parseTokens(rawGiven as string).sort();
+			isCorrect = JSON.stringify(a) === JSON.stringify(b);
+		} else if (question.type === QuestionType.TRUE_FALSE) {
+			const trueSet = new Set(["benar", "true", "t", "ya", "y", "1"]);
+			const falseSet = new Set([
+				"salah",
+				"false",
+				"f",
+				"tidak",
+				"no",
+				"n",
+				"0",
+			]);
+			const caTrue = trueSet.has(correct);
+			const caFalse = falseSet.has(correct);
+			const ansTrue = trueSet.has(given);
+			const ansFalse = falseSet.has(given);
+			if (caTrue || caFalse) {
+				isCorrect = (caTrue && ansTrue) || (caFalse && ansFalse);
+			} else {
+				// Fallback to string equality
+				isCorrect = correct === given;
+			}
+		} else {
+			isCorrect = correct === given;
+		}
+
 		const points = isCorrect ? question.points : 0;
 
 		if (answer) {
-			answer.answer = submitAnswerDto.answer;
+			answer.answer = storedAnswerValue;
+			answer.answerImageUrl = null; // Clear photo if text answer provided
 			answer.isCorrect = isCorrect;
 			answer.points = points;
 		} else {
 			answer = this.answersRepository.create({
 				submissionId,
 				questionId: submitAnswerDto.questionId,
-				answer: submitAnswerDto.answer,
+				answer: storedAnswerValue,
+				answerImageUrl: null,
 				isCorrect,
 				points,
 			});
@@ -144,7 +298,7 @@ export class SubmissionsService {
 	async findByExam(examId: number): Promise<Submission[]> {
 		return this.submissionsRepository.find({
 			where: { examId },
-			relations: ["student", "student.user", "answers"],
+			relations: ["student", "student.user", "student.class", "answers"],
 			order: { submittedAt: "DESC" },
 		});
 	}
@@ -303,5 +457,24 @@ export class SubmissionsService {
 	async findByUserId(userId: number): Promise<Submission[]> {
 		const studentId = await this.getStudentIdFromUserId(userId);
 		return this.findByStudent(studentId);
+	}
+
+	// Delete a submission
+	async delete(id: number): Promise<any> {
+		const submission = await this.submissionsRepository.findOne({
+			where: { id },
+		});
+
+		if (!submission) {
+			throw new NotFoundException("Submission not found");
+		}
+
+		// Delete all answers associated with this submission
+		await this.answersRepository.delete({ submissionId: id });
+
+		// Delete the submission
+		await this.submissionsRepository.delete(id);
+
+		return { message: "Submission deleted successfully" };
 	}
 }

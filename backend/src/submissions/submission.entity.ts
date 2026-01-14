@@ -30,12 +30,14 @@ export class Submission {
 	@JoinColumn({ name: "studentId" })
 	student: Student;
 
-	@Column()
+	@Column({ nullable: true })
 	examId: number;
 
-	@ManyToOne(() => Exam, (exam) => exam.submissions)
+	@ManyToOne(() => Exam, (exam) => exam.submissions, {
+		onDelete: "SET NULL",
+	})
 	@JoinColumn({ name: "examId" })
-	exam: Exam;
+	exam: Exam | null;
 
 	@Column({
 		type: "enum",

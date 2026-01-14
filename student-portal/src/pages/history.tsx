@@ -4,6 +4,7 @@ import api from "@/lib/api";
 import { getImageUrl } from "@/lib/imageUrl";
 import toast from "react-hot-toast";
 import { format } from "date-fns";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 
 interface Submission {
 	id: string | number;
@@ -20,6 +21,7 @@ interface Submission {
 }
 
 export default function HistoryPage() {
+	const { isAuthenticated } = useAuthGuard();
 	const [submissions, setSubmissions] = useState<Submission[]>([]);
 	const [loading, setLoading] = useState(true);
 

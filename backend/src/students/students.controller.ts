@@ -41,16 +41,16 @@ export class StudentsController {
 			// Create workbook and worksheet
 			const wb = XLSX.utils.book_new();
 			const wsData = [
-				["Nama", "Email", "NIS", "Password"],
+				["Nama", "Email", "NIS/NISN", "Password"],
 				["John Doe", "john@example.com", "2024001", "password123"],
-				["Jane Smith", "jane@example.com", "2024002", "password456"],
+				["Jane Smith", "", "2024002", "password456"],
 			];
 			const ws = XLSX.utils.aoa_to_sheet(wsData);
 
 			// Set column widths
 			ws["!cols"] = [
 				{ wch: 20 }, // Nama
-				{ wch: 25 }, // Email
+				{ wch: 25 }, // Email (optional)
 				{ wch: 15 }, // NIS
 				{ wch: 15 }, // Password
 			];
@@ -105,14 +105,14 @@ export class StudentsController {
 				throw new BadRequestException("File Excel kosong");
 			}
 
-			// Validate headers
+			// Validate headers - Email is now optional
 			const firstRow = data[0];
-			const requiredHeaders = ["Nama", "Email", "NIS", "Password"];
+			const requiredHeaders = ["Nama", "NIS", "Password"];
 			const hasAllHeaders = requiredHeaders.every((h) => h in firstRow);
 
 			if (!hasAllHeaders) {
 				throw new BadRequestException(
-					"Format file tidak sesuai. Pastikan kolom: Nama, Email, NIS, Password"
+					"Format file tidak sesuai. Pastikan kolom: Nama, NIS, Password (Email opsional)"
 				);
 			}
 
