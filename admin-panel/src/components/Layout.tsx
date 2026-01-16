@@ -1,7 +1,8 @@
-import { useEffect, ReactNode } from "react";
+import { useEffect, ReactNode, useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import ActiveSemesterBanner from "./ActiveSemesterBanner";
+import LogoutConfirmationModal from "./LogoutConfirmationModal";
 import { useAuthStore } from "@/store/authStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import Link from "next/link";
@@ -15,6 +16,7 @@ export default function Layout({ children, title }: LayoutProps) {
 	const router = useRouter();
 	const { user, isAuthenticated, logout, checkAuth } = useAuthStore();
 	const { settingsObject } = useSettingsStore();
+	const [logoutModal, setLogoutModal] = useState(false);
 
 	useEffect(() => {
 		checkAuth();
@@ -23,8 +25,13 @@ export default function Layout({ children, title }: LayoutProps) {
 		}
 	}, [isAuthenticated, router, checkAuth]);
 
-	const handleLogout = () => {
+	const handleLogoutClick = () => {
+		setLogoutModal(true);
+	};
+
+	const handleConfirmLogout = () => {
 		logout();
+		setLogoutModal(false);
 		router.push("/login");
 	};
 
@@ -127,7 +134,10 @@ export default function Layout({ children, title }: LayoutProps) {
 						<div className="mb-4">
 							<ActiveSemesterBanner variant="compact" />
 						</div>
-						<button onClick={handleLogout} className="w-full btn btn-secondary">
+						<button
+							onClick={handleLogoutClick}
+							className="w-full btn btn-secondary"
+						>
 							Logout
 						</button>
 					</div>
@@ -135,6 +145,13 @@ export default function Layout({ children, title }: LayoutProps) {
 
 				{/* Main Content */}
 				<main className="ml-64 p-8">{children}</main>
+
+				{/* Logout Confirmation Modal */}
+				<LogoutConfirmationModal
+					isOpen={logoutModal}
+					onConfirm={handleConfirmLogout}
+					onCancel={() => setLogoutModal(false)}
+				/>
 			</div>
 		</>
 	);

@@ -227,11 +227,6 @@ export default function LoginPage({ appSettings }: { appSettings?: any }) {
 							</button>
 						</div>
 					</form>
-
-					<div className="mt-6 text-sm text-gray-500 max-w-md">
-						<p className="font-semibold text-gray-700">Demo Login</p>
-						<p>Email: admin@ujian.com — Password: admin123</p>
-					</div>
 				</div>
 				<div className="hidden lg:flex flex-col items-center justify-center p-12 bg-gradient-to-b from-indigo-600 to-indigo-800 text-white">
 					<img
