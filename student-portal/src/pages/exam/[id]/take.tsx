@@ -6,11 +6,13 @@ import toast from "react-hot-toast";
 import { getImageUrl } from "@/lib/imageUrl";
 import Head from "next/head";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import { useAntiCheat } from "@/hooks/useAntiCheat";
 
 export default function ExamTakePage() {
 	const router = useRouter();
 	const { id, submissionId } = router.query;
 	const { isAuthenticated } = useAuthGuard();
+	const { isMobile, windowBlurred, activateAntiCheat } = useAntiCheat();
 
 	const [exam, setExam] = useState<any>(null);
 	const [submission, setSubmission] = useState<any>(null);
@@ -34,6 +36,7 @@ export default function ExamTakePage() {
 	const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [fullscreenEnabled, setFullscreenEnabled] = useState(false);
+	const [fontSize, setFontSize] = useState(1); // 1 = normal, 1.2 = besar, 0.9 = kecil
 
 	const answersRef = useRef<Record<number, string>>({});
 	const submissionRef = useRef<any>(null);
@@ -54,6 +57,14 @@ export default function ExamTakePage() {
 			return () => clearInterval(timer);
 		}
 	}, [timeLeft]);
+
+	// Anti-cheat and fullscreen effects
+	useEffect(() => {
+		if (!loading && isMobile) {
+			// Activate anti-cheat for mobile
+			activateAntiCheat();
+		}
+	}, [loading, isMobile]);
 
 	const tryFullscreen = async () => {
 		try {
@@ -244,17 +255,24 @@ export default function ExamTakePage() {
 		}
 	};
 
-	const handleAnswer = async (questionId: number, answer: string) => {
+	const handleAnswer = async (
+		questionId: number,
+		answerValue: number | string
+	) => {
 		if (submission && submission.status === "submitted") {
 			toast.error("Ujian sudah dikumpulkan. Tidak bisa mengubah jawaban.");
 			return;
 		}
 
 		const next = { ...answersRef.current };
-		if (answer == null || answer.toString().trim() === "") {
+		if (
+			answerValue == null ||
+			(typeof answerValue === "string" && answerValue.trim() === "")
+		) {
 			delete next[questionId];
 		} else {
-			next[questionId] = answer;
+			// Convert to string for storage
+			next[questionId] = String(answerValue);
 		}
 		setAnswers(next);
 		answersRef.current = next;
@@ -263,7 +281,7 @@ export default function ExamTakePage() {
 			try {
 				await api.post(`/submissions/${submission.id}/answer`, {
 					questionId,
-					answer,
+					answer: String(answerValue), // Send as string
 				});
 			} catch (e) {
 				console.error("Error saving answer:", e);
@@ -390,8 +408,8 @@ export default function ExamTakePage() {
 	if (loading) {
 		return (
 			<Layout hideBottomNav={true} hideDesktopNav={true}>
-				<div className="flex items-center justify-center h-64">
-					<div className="text-xl">Menyiapkan ujian...</div>
+				<div className="flex items-center justify-center min-h-screen md:h-64 px-4">
+					<div className="text-lg md:text-xl">Menyiapkan ujian...</div>
 				</div>
 			</Layout>
 		);
@@ -407,594 +425,824 @@ export default function ExamTakePage() {
 		return a != null && a.toString().trim() !== "";
 	}).length;
 
+	// Helper function to check if question type is MMC (Multiple Multiple Choice)
+	const isMMCType = (type: string) => {
+		if (!type) return false;
+		const lowerType = type.toLowerCase();
+		return (
+			lowerType === "mixed_multiple_choice" ||
+			lowerType === "mmc" ||
+			lowerType === "majemuk" ||
+			lowerType === "multiple_choice_mixed" ||
+			lowerType === "multiple-choice-mixed"
+		);
+	};
+
+	// MOBILE LAYOUT
+	if (isMobile) {
+		return (
+			<>
+				<Head>
+					<title>{exam?.title} - Student Portal</title>
+					<meta name="viewport" content="width=device-width, initial-scale=1" />
+				</Head>
+				<Layout hideBottomNav={true} hideDesktopNav={true} hideFooter={true}>
+					<div
+						className="fixed inset-0 bg-white flex flex-col z-50"
+						style={{ fontSize: `${fontSize * 100}%` }}
+					>
+						{/* Mobile Header */}
+						<div className="sticky top-0 z-40 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg">
+							<div className="px-3 py-2">
+								{/* Top Row */}
+								<div className="flex items-center justify-between mb-2">
+									<div className="text-sm font-bold truncate">
+										Soal {currentQuestionIndex + 1}/{questions.length}
+									</div>
+									<div className="text-center">
+										<div
+											className={`text-lg md:text-2xl font-bold font-mono ${
+												timeLeft < 300 ? "text-red-300" : "text-white"
+											}`}
+										>
+											{formatTime(timeLeft)}
+										</div>
+									</div>
+									<button
+										onClick={() => setShowQuestionList(!showQuestionList)}
+										className="px-2.5 py-1.5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded text-xs font-bold transition whitespace-nowrap flex items-center gap-1"
+									>
+										📋 Soal
+									</button>
+								</div>
+
+								{/* Bottom Row - Controls */}
+								<div className="flex gap-2 text-xs">
+									<button
+										onClick={() => setFontSize(Math.max(0.8, fontSize - 0.1))}
+										className="px-2 py-0.5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded transition"
+									>
+										A−
+									</button>
+									<button
+										onClick={() => setFontSize(1)}
+										className={`px-2 py-0.5 rounded transition ${
+											fontSize === 1
+												? "bg-white text-blue-600"
+												: "bg-white bg-opacity-20 hover:bg-opacity-30"
+										}`}
+									>
+										A
+									</button>
+									<button
+										onClick={() => setFontSize(Math.min(1.4, fontSize + 0.1))}
+										className="px-2 py-0.5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded transition"
+									>
+										A+
+									</button>
+									{windowBlurred && (
+										<div className="ml-auto px-2 py-0.5 bg-red-400 rounded text-xs font-bold animate-pulse">
+											⚠️ PERHATIAN: APP TIDAK AKTIF
+										</div>
+									)}
+								</div>
+							</div>
+						</div>
+
+						{/* Mobile Content Area */}
+						<div className="flex-1 overflow-y-auto pb-20 flex flex-col items-center justify-center">
+							<div className="px-3 py-4 w-full max-w-md">
+								{/* Question */}
+								<h2 className="text-base md:text-lg font-semibold text-gray-900 mb-4 leading-relaxed">
+									{currentQuestion?.questionText}
+								</h2>
+
+								{/* Question Image */}
+								{currentQuestion?.imageUrl && (
+									<div className="mb-4 rounded-lg overflow-hidden bg-gray-100">
+										<img
+											src={getImageUrl(currentQuestion.imageUrl)}
+											alt="soal"
+											className="w-full h-auto object-contain"
+										/>
+									</div>
+								)}
+
+								{/* Options */}
+								<div className="space-y-2 mb-4">
+									{currentQuestion?.type === "essay" ? (
+										<textarea
+											className="w-full border-2 border-gray-300 rounded-lg p-3 text-sm min-h-32 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition"
+											value={answers[currentQuestion.id] || ""}
+											onChange={(e) =>
+												handleAnswer(currentQuestion.id, e.target.value)
+											}
+											disabled={submission?.status === "submitted"}
+											placeholder="Ketik jawaban Anda..."
+										/>
+									) : isMMCType(currentQuestion?.type) ? (
+										currentQuestion.options?.map((option: any, idx: number) => {
+											const answerStr = (
+												answers[currentQuestion.id] || ""
+											).trim();
+											const isAnswered = answerStr
+												? answerStr
+														.split(",")
+														.map((s) => parseInt(s))
+														.includes(idx)
+												: false;
+											const hasImage = currentQuestion.optionImages?.[idx];
+
+											return (
+												<label
+													key={idx}
+													className="flex items-start gap-2 p-2.5 border-2 border-gray-300 rounded-lg active:border-blue-500 transition bg-white"
+												>
+													<input
+														type="checkbox"
+														checked={isAnswered}
+														onChange={(e) =>
+															handleMixedMultipleChoice(
+																currentQuestion.id,
+																idx,
+																e.target.checked
+															)
+														}
+														disabled={submission?.status === "submitted"}
+														className="w-5 h-5 mt-0.5 text-blue-600 rounded focus:ring-2 flex-shrink-0"
+													/>
+													<div className="flex-1 min-w-0">
+														{hasImage ? (
+															<img
+																src={getImageUrl(hasImage)}
+																alt={`opsi ${String.fromCharCode(65 + idx)}`}
+																className="h-16 w-auto rounded"
+															/>
+														) : (
+															<span className="font-medium text-gray-900">
+																{String.fromCharCode(65 + idx)}. {option}
+															</span>
+														)}
+													</div>
+												</label>
+											);
+										})
+									) : (
+										currentQuestion.options?.map((option: any, idx: number) => {
+											const isAnswered =
+												answers[currentQuestion.id] === String(idx);
+											const hasImage = currentQuestion.optionImages?.[idx];
+
+											return (
+												<label
+													key={idx}
+													className="flex items-start gap-2 p-2.5 border-2 border-gray-300 rounded-lg active:border-blue-500 transition bg-white"
+												>
+													<input
+														type="radio"
+														name={`question-${currentQuestion.id}`}
+														value={String(idx)}
+														checked={isAnswered}
+														onChange={() =>
+															handleAnswer(currentQuestion.id, idx)
+														}
+														disabled={submission?.status === "submitted"}
+														className="w-5 h-5 mt-0.5 text-blue-600 focus:ring-2 flex-shrink-0"
+													/>
+													<div className="flex-1 min-w-0">
+														{hasImage ? (
+															<img
+																src={getImageUrl(hasImage)}
+																alt={`opsi ${String.fromCharCode(65 + idx)}`}
+																className="h-16 w-auto rounded"
+															/>
+														) : (
+															<span className="font-medium text-gray-900">
+																{String.fromCharCode(65 + idx)}. {option}
+															</span>
+														)}
+													</div>
+												</label>
+											);
+										})
+									)}
+								</div>
+							</div>
+						</div>
+
+						{/* Mobile Bottom Bar */}
+						<div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-300 px-3 py-2 flex gap-1.5 shadow-lg">
+							<button
+								onClick={() =>
+									setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))
+								}
+								disabled={currentQuestionIndex === 0}
+								className="flex-1 px-2 py-2 text-xs font-bold bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 text-gray-800 rounded transition"
+							>
+								← Prev
+							</button>
+							<button
+								onClick={() => handleClearAnswer(currentQuestion.id)}
+								className="flex-1 px-2 py-2 text-xs font-bold bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded transition"
+							>
+								🔄 Ragu
+							</button>
+							<button
+								onClick={() => {
+									if (currentQuestionIndex === questions.length - 1) {
+										setShowSubmitConfirm(true);
+									} else {
+										setCurrentQuestionIndex(
+											Math.min(questions.length - 1, currentQuestionIndex + 1)
+										);
+									}
+								}}
+								className="flex-1 px-2 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded transition"
+							>
+								{currentQuestionIndex === questions.length - 1
+									? "Kumpul →"
+									: "Next →"}
+							</button>
+						</div>
+
+						{/* Question List Modal - Mobile */}
+						{showQuestionList && (
+							<div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-end">
+								<div className="bg-white rounded-t-3xl w-full px-4 py-4 max-h-96 overflow-y-auto">
+									<div className="flex items-center justify-between mb-3">
+										<h2 className="text-lg font-bold">Daftar Soal</h2>
+										<button
+											onClick={() => setShowQuestionList(false)}
+											className="text-2xl text-gray-400 hover:text-gray-600"
+										>
+											×
+										</button>
+									</div>
+
+									{/* Stats */}
+									<div className="flex gap-3 mb-4 pb-3 border-b">
+										<div className="flex-1 bg-green-50 px-3 py-2 rounded">
+											<p className="text-xs text-gray-600 font-bold">
+												Terjawab
+											</p>
+											<p className="text-lg font-bold text-green-600">
+												{answeredCount}
+											</p>
+										</div>
+										<div className="flex-1 bg-gray-50 px-3 py-2 rounded">
+											<p className="text-xs text-gray-600 font-bold">Belum</p>
+											<p className="text-lg font-bold text-gray-600">
+												{questions.length - answeredCount}
+											</p>
+										</div>
+									</div>
+
+									{/* Grid */}
+									<div className="grid grid-cols-8 gap-1.5 mb-4">
+										{questions.map((q: any, idx: number) => {
+											const isAnswered =
+												answers[q.id] != null &&
+												answers[q.id].toString().trim() !== "";
+											return (
+												<button
+													key={idx}
+													onClick={() => {
+														setCurrentQuestionIndex(idx);
+														setShowQuestionList(false);
+													}}
+													className={`p-1.5 rounded font-bold text-xs transition ${
+														idx === currentQuestionIndex
+															? "bg-blue-600 text-white ring-2 ring-blue-400"
+															: isAnswered
+															? "bg-green-500 text-white"
+															: "bg-gray-200 text-gray-700"
+													}`}
+												>
+													{isAnswered ? "✓" : idx + 1}
+												</button>
+											);
+										})}
+									</div>
+
+									<button
+										onClick={() => {
+											setShowSubmitConfirm(true);
+											setShowQuestionList(false);
+										}}
+										disabled={answeredCount < questions.length}
+										className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-bold text-sm transition"
+									>
+										Kumpulkan
+									</button>
+								</div>
+							</div>
+						)}
+
+						{/* Submit Confirmation - Mobile */}
+						{showSubmitConfirm && (
+							<div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-end">
+								<div className="bg-white rounded-t-3xl w-full px-4 py-4">
+									<h2 className="text-lg font-bold mb-2">
+										Konfirmasi Pengumpulan
+									</h2>
+
+									<div className="space-y-3 mb-4">
+										<p className="text-sm text-gray-700">
+											Soal terjawab:{" "}
+											<span className="font-bold text-green-600">
+												{answeredCount}
+											</span>{" "}
+											dari <span className="font-bold">{questions.length}</span>
+										</p>
+
+										{questions.length - answeredCount > 0 && (
+											<div className="bg-orange-50 border border-orange-200 p-3 rounded">
+												<p className="text-sm text-orange-800 font-bold">
+													Masih ada {questions.length - answeredCount} soal
+													belum dijawab
+												</p>
+											</div>
+										)}
+
+										<div className="bg-red-50 border-l-4 border-red-500 p-3 rounded">
+											<p className="font-bold text-red-900 text-sm mb-1">
+												⚠️ PERHATIAN
+											</p>
+											<p className="text-xs text-red-800">
+												Ujian ini{" "}
+												<span className="font-bold">TIDAK BISA DIULANG</span>{" "}
+												setelah dikumpulkan.
+											</p>
+										</div>
+									</div>
+
+									<div className="flex gap-2">
+										<button
+											onClick={() => setShowSubmitConfirm(false)}
+											className="flex-1 px-3 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-lg font-bold transition"
+										>
+											Batal
+										</button>
+										<button
+											onClick={handleSubmit}
+											disabled={
+												isSubmitting || answeredCount < questions.length
+											}
+											className="flex-1 px-3 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-bold transition"
+										>
+											{isSubmitting ? "..." : "Kumpulkan"}
+										</button>
+									</div>
+								</div>
+							</div>
+						)}
+					</div>
+				</Layout>
+			</>
+		);
+	}
+
+	// DESKTOP LAYOUT (existing design preserved)
 	return (
 		<>
 			<Head>
 				<title>{exam?.title} - Student Portal</title>
 			</Head>
-			<Layout hideBottomNav={true} hideDesktopNav={true}>
-				<div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100">
-					{/* Header */}
-					<div className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
-						<div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
-							<div className="flex items-center justify-between gap-2 sm:gap-4 flex-wrap">
-								<div className="flex-1 min-w-0">
-									<h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">
-										{exam?.title}
-									</h1>
-									<p className="text-xs sm:text-sm text-gray-600">
-										Soal{" "}
-										<span className="font-semibold">
-											{currentQuestionIndex + 1}
-										</span>{" "}
-										dari{" "}
-										<span className="font-semibold">{questions.length}</span>
+			<Layout hideBottomNav={true} hideDesktopNav={true} hideFooter={true}>
+				<div
+					className="min-h-screen flex flex-col bg-white"
+					style={{ fontSize: `${fontSize * 100}%` }}
+				>
+					{/* Desktop Header */}
+					<div className="sticky top-0 z-30 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg">
+						<div className="px-6 py-4">
+							<div className="flex items-center justify-between gap-4 mb-4">
+								{/* Left: Font Controls */}
+								<div className="flex items-center gap-3">
+									<span className="text-sm font-medium">Ukuran:</span>
+									<button
+										onClick={() => setFontSize(0.9)}
+										className={`px-2.5 py-1 rounded font-bold transition ${
+											fontSize === 0.9
+												? "bg-white text-blue-600"
+												: "bg-blue-500 text-white hover:bg-blue-400"
+										}`}
+									>
+										A
+									</button>
+									<button
+										onClick={() => setFontSize(1)}
+										className={`px-3 py-1 rounded font-bold transition ${
+											fontSize === 1
+												? "bg-white text-blue-600"
+												: "bg-blue-500 text-white hover:bg-blue-400"
+										}`}
+									>
+										A
+									</button>
+									<button
+										onClick={() => setFontSize(1.2)}
+										className={`px-2.5 py-1 rounded font-bold transition ${
+											fontSize === 1.2
+												? "bg-white text-blue-600"
+												: "bg-blue-500 text-white hover:bg-blue-400"
+										}`}
+										style={{ fontSize: "1.2em" }}
+									>
+										A
+									</button>
+								</div>
+
+								{/* Middle: Title & Question Progress */}
+								<div className="text-center flex-1">
+									<h1 className="font-bold">{exam?.title}</h1>
+									<p className="text-sm text-blue-100">
+										Soal {currentQuestionIndex + 1} dari {questions.length}
 									</p>
 								</div>
 
-								{/* Timer */}
-								<div className="flex items-center gap-3">
-									<div className="text-center">
+								{/* Right: Timer & Buttons */}
+								<div className="flex items-center gap-4">
+									<div className="text-center min-w-fit">
 										<div
-											className={`text-2xl sm:text-3xl font-bold font-mono ${
-												timeLeft < 300
-													? "text-red-600"
-													: timeLeft < 900
-													? "text-orange-600"
-													: "text-green-600"
+											className={`text-2xl font-bold font-mono ${
+												timeLeft < 300 ? "text-red-300" : "text-white"
 											}`}
 										>
 											{formatTime(timeLeft)}
 										</div>
-										<p className="text-xs sm:text-sm text-gray-600">
-											Sisa Waktu
-										</p>
+										<p className="text-xs text-blue-100">Sisa Waktu</p>
 									</div>
-
-									{/* Question List Toggle */}
 									<button
 										onClick={() => setShowQuestionList(!showQuestionList)}
-										className="px-3 py-2 sm:px-4 sm:py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg font-medium text-xs sm:text-sm transition flex items-center gap-2"
+										className="px-4 py-2 bg-white text-blue-600 hover:bg-blue-50 rounded-lg font-semibold text-sm transition"
 									>
-										<span>📋</span>
-										<span className="hidden sm:inline">Semua Soal</span>
-										<span className="sm:hidden">
-											{answeredCount}/{questions.length}
-										</span>
+										Daftar Soal
 									</button>
 								</div>
 							</div>
 
-							{lastSavedAt && (
-								<div className="mt-2 text-right text-xs text-gray-500 flex items-center justify-end gap-1">
-									<span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
-									Tersimpan: {new Date(lastSavedAt).toLocaleTimeString()}
-								</div>
-							)}
+							{/* Exam Meta Info */}
+							<div className="text-sm text-blue-100 flex gap-6">
+								<span>📝 {currentQuestion?.points || 0} poin</span>
+								{isAnswered && <span>✓ Terjawab</span>}
+							</div>
 						</div>
 					</div>
-
-					{/* Main Content */}
-					<div className="flex-1 overflow-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-						<div className="max-w-4xl mx-auto">
-							{/* Question Card */}
-							<div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-4 sm:mb-6">
-								<div className="flex items-center justify-between mb-4 sm:mb-6">
-									<div className="flex items-center gap-2 sm:gap-3">
-										<span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
-											Soal {currentQuestionIndex + 1}
-										</span>
-										<span className="text-gray-600 text-xs sm:text-sm font-medium">
-											{currentQuestion?.points || 0} poin
-										</span>
-										{isAnswered && (
-											<span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-medium">
-												<span>✓</span>
-												<span className="hidden sm:inline">Terjawab</span>
-											</span>
-										)}
-									</div>
-									<button
-										onClick={() => setShowQuestionList(!showQuestionList)}
-										className="md:hidden px-2 sm:px-3 py-1 sm:py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium transition"
-									>
-										📋
-									</button>
-								</div>
+					{/* Main Content - Two Column Layout */}
+					<div className="flex-1 flex overflow-hidden">
+						{/* Left Column: Question & Image */}
+						<div className="flex-1 overflow-y-auto border-r border-gray-300">
+							<div className="p-6 max-w-2xl">
+								{/* Question Text */}
+								<h2 className="text-xl font-semibold text-gray-900 mb-6 leading-relaxed">
+									{currentQuestion?.questionText}
+								</h2>
 
 								{/* Question Image */}
 								{currentQuestion?.imageUrl && (
-									<div className="mb-4 sm:mb-6">
+									<div className="mb-8">
 										<img
 											src={getImageUrl(currentQuestion.imageUrl)}
-											alt="question image"
-											className="max-h-80 w-full object-contain rounded-lg"
+											alt="soal"
+											className="max-h-96 w-full object-contain rounded-lg"
 										/>
 									</div>
 								)}
+							</div>
+						</div>
 
-								{/* Question Text */}
-								<div className="mb-6 sm:mb-8">
-									<p className="text-base sm:text-lg text-gray-900 leading-relaxed whitespace-pre-wrap">
-										{currentQuestion?.questionText}
-									</p>
-								</div>
-
-								{/* Answer Section */}
-								<div className="space-y-3">
+						{/* Right Column: Options & Controls */}
+						<div className="w-1/2 overflow-y-auto bg-gray-50 border-l border-gray-300">
+							<div className="p-6">
+								{/* Answer Options */}
+								<div className="space-y-3 mb-8">
 									{currentQuestion?.type === "essay" ? (
-										<div>
-											<label className="block text-sm font-medium text-gray-700 mb-2">
+										<>
+											<label className="block text-sm font-semibold text-gray-700 mb-3">
 												Jawaban Anda
 											</label>
-											<div className="space-y-3">
-												{/* Text Answer */}
-												<textarea
-													className="w-full border-2 border-gray-300 rounded-lg p-3 sm:p-4 min-h-[140px] sm:min-h-[160px] focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition text-sm sm:text-base"
-													value={answers[currentQuestion.id] || ""}
-													onChange={(e) =>
-														handleAnswer(currentQuestion.id, e.target.value)
-													}
-													disabled={submission?.status === "submitted"}
-													placeholder="Ketik jawaban Anda di sini..."
-												/>
+											<textarea
+												className="w-full border-2 border-gray-300 rounded-lg p-4 min-h-40 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition"
+												value={answers[currentQuestion.id] || ""}
+												onChange={(e) =>
+													handleAnswer(currentQuestion.id, e.target.value)
+												}
+												disabled={submission?.status === "submitted"}
+												placeholder="Ketik jawaban Anda..."
+											/>
+										</>
+									) : isMMCType(currentQuestion?.type) ? (
+										// Multiple Multiple Choice
+										currentQuestion.options?.map((option: any, idx: number) => {
+											const answerStr = (
+												answers[currentQuestion.id] || ""
+											).trim();
+											const isAnswered = answerStr
+												? answerStr
+														.split(",")
+														.map((s) => parseInt(s))
+														.includes(idx)
+												: false;
+											const hasImage = currentQuestion.optionImages?.[idx];
 
-												{/* Photo Answer - if enabled for this question */}
-												{(currentQuestion as any).allowPhotoAnswer && (
-													<div className="border-2 border-dashed border-blue-300 rounded-lg p-4 bg-blue-50">
-														<div className="flex items-start gap-2 sm:gap-3">
-															<div className="text-2xl">📷</div>
-															<div className="flex-1">
-																<label className="block text-sm font-medium text-gray-700 mb-2">
-																	Atau unggah foto jawaban Anda
-																</label>
-																<input
-																	type="file"
-																	accept="image/*"
-																	disabled={submission?.status === "submitted"}
-																	className="block w-full text-sm text-gray-500
-																				file:mr-4 file:py-2 file:px-4
-																				file:rounded file:border-0
-																				file:text-sm file:font-semibold
-																				file:bg-blue-50 file:text-blue-700
-																				hover:file:bg-blue-100"
-																	onChange={(e) => {
-																		const file = e.target.files?.[0];
-																		if (file) {
-																			const reader = new FileReader();
-																			reader.onloadend = () => {
-																				// Store as data URL or handle file upload
-																				handleAnswer(
-																					currentQuestion.id,
-																					(reader.result as string) || ""
-																				);
-																			};
-																			reader.readAsDataURL(file);
-																		}
-																	}}
-																/>
-															</div>
-														</div>
+											return (
+												<label
+													key={idx}
+													className="flex items-center gap-3 p-3 border-2 border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 transition"
+												>
+													<input
+														type="checkbox"
+														checked={isAnswered}
+														onChange={(e) =>
+															handleMixedMultipleChoice(
+																currentQuestion.id,
+																idx,
+																e.target.checked
+															)
+														}
+														disabled={submission?.status === "submitted"}
+														className="w-5 h-5 text-blue-600 rounded focus:ring-2"
+													/>
+													<div className="flex-1">
+														{hasImage ? (
+															<img
+																src={getImageUrl(hasImage)}
+																alt={`opsi ${String.fromCharCode(65 + idx)}`}
+																className="h-20 w-auto rounded"
+															/>
+														) : (
+															<span className="font-medium text-gray-900">
+																{String.fromCharCode(65 + idx)}. {option}
+															</span>
+														)}
 													</div>
-												)}
-											</div>
-										</div>
-									) : currentQuestion?.type === "mixed_multiple_choice" ? (
-										<div className="space-y-3">
-											<div>
-												<p className="text-sm font-medium text-gray-700 mb-3">
-													Pilih satu atau lebih jawaban yang benar:
-												</p>
-												<div className="space-y-2 sm:space-y-3">
-													{currentQuestion?.options?.map(
-														(option: string, index: number) => {
-															// Parse answer as comma-separated indices (e.g., "0,2,3")
-															const answerStr = (
-																answers[currentQuestion.id] || ""
-															).trim();
-															const selectedIndices = answerStr
-																? answerStr
-																		.split(",")
-																		.map((s) => parseInt(s, 10))
-																: [];
-															const isChecked = selectedIndices.includes(index);
-															const optionImageUrl =
-																currentQuestion?.optionImages?.[index];
-															return (
-																<label
-																	key={index}
-																	className={`flex flex-col p-3 sm:p-4 border-2 rounded-lg cursor-pointer transition-all ${
-																		isChecked
-																			? "border-green-500 bg-green-50 shadow-md"
-																			: "border-gray-300 hover:border-blue-400 bg-white"
-																	}`}
-																>
-																	<div className="flex items-start gap-3">
-																		<input
-																			type="checkbox"
-																			checked={isChecked}
-																			onChange={(e) =>
-																				handleMixedMultipleChoice(
-																					currentQuestion.id,
-																					index,
-																					e.target.checked
-																				)
-																			}
-																			className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0 rounded"
-																			disabled={
-																				submission?.status === "submitted"
-																			}
-																		/>
-																		<div className="flex-1">
-																			<span className="text-gray-900 text-sm sm:text-base block">
-																				{option ||
-																					(optionImageUrl
-																						? `Pilihan ${String.fromCharCode(
-																								65 + index
-																						  )}`
-																						: "")}
-																			</span>
-																			{optionImageUrl && (
-																				<img
-																					src={getImageUrl(optionImageUrl)}
-																					alt={`option ${index + 1}`}
-																					className="mt-2 max-h-40 rounded-md object-contain"
-																				/>
-																			)}
-																		</div>
-																		{isChecked && (
-																			<span className="text-green-600 font-bold text-xl flex-shrink-0">
-																				✓
-																			</span>
-																		)}
-																	</div>
-																</label>
-															);
-														}
-													)}
-												</div>
-											</div>
-										</div>
+												</label>
+											);
+										})
 									) : (
-										<div className="space-y-3">
-											<div>
-												<p className="text-sm font-medium text-gray-700 mb-3">
-													Pilih jawaban yang benar:
-												</p>
-												<div className="space-y-2 sm:space-y-3">
-													{currentQuestion?.options?.map(
-														(option: string, index: number) => {
-															const optionImageUrl =
-																currentQuestion?.optionImages?.[index];
-															return (
-																<label
-																	key={index}
-																	className={`flex flex-col p-3 sm:p-4 border-2 rounded-lg cursor-pointer transition-all ${
-																		answers[currentQuestion.id] === option
-																			? "border-green-500 bg-green-50 shadow-md"
-																			: "border-gray-300 hover:border-blue-400 bg-white"
-																	}`}
-																>
-																	<div className="flex items-start gap-3">
-																		<input
-																			type="radio"
-																			name={`question-${currentQuestion.id}`}
-																			value={option}
-																			checked={
-																				answers[currentQuestion.id] === option
-																			}
-																			onChange={(e) =>
-																				handleAnswer(
-																					currentQuestion.id,
-																					e.target.value
-																				)
-																			}
-																			className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0"
-																			disabled={
-																				submission?.status === "submitted"
-																			}
-																		/>
-																		<div className="flex-1">
-																			<span className="text-gray-900 text-sm sm:text-base block">
-																				{option ||
-																					(optionImageUrl
-																						? `Pilihan ${String.fromCharCode(
-																								65 + index
-																						  )}`
-																						: "")}
-																			</span>
-																			{optionImageUrl && (
-																				<img
-																					src={getImageUrl(optionImageUrl)}
-																					alt={`option ${index + 1}`}
-																					className="mt-2 max-h-40 rounded-md object-contain"
-																				/>
-																			)}
-																		</div>
-																		{answers[currentQuestion.id] === option && (
-																			<span className="text-green-600 font-bold text-xl flex-shrink-0">
-																				✓
-																			</span>
-																		)}
-																	</div>
-																</label>
-															);
+										// Multiple Choice
+										currentQuestion.options?.map((option: any, idx: number) => {
+											const isAnswered =
+												answers[currentQuestion.id] === String(idx);
+											const hasImage = currentQuestion.optionImages?.[idx];
+
+											return (
+												<label
+													key={idx}
+													className="flex items-center gap-3 p-3 border-2 border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 transition"
+												>
+													<input
+														type="radio"
+														name={`question-${currentQuestion.id}`}
+														value={String(idx)}
+														checked={isAnswered}
+														onChange={() =>
+															handleAnswer(currentQuestion.id, idx)
 														}
-													)}
-												</div>
-											</div>
-										</div>
+														disabled={submission?.status === "submitted"}
+														className="w-5 h-5 text-blue-600 focus:ring-2"
+													/>
+													<div className="flex-1">
+														{hasImage ? (
+															<img
+																src={getImageUrl(hasImage)}
+																alt={`opsi ${String.fromCharCode(65 + idx)}`}
+																className="h-20 w-auto rounded"
+															/>
+														) : (
+															<span className="font-medium text-gray-900">
+																{String.fromCharCode(65 + idx)}. {option}
+															</span>
+														)}
+													</div>
+												</label>
+											);
+										})
 									)}
 								</div>
-							</div>
 
-							{/* Navigation Buttons */}
-							<div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-20 sm:mb-6">
-								<button
-									onClick={() =>
-										setCurrentQuestionIndex(
-											Math.max(0, currentQuestionIndex - 1)
-										)
-									}
-									disabled={currentQuestionIndex === 0}
-									className="px-4 py-2 sm:px-6 sm:py-3 bg-gray-200 hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-medium text-sm sm:text-base transition flex items-center justify-center gap-2"
-								>
-									<span>←</span>
-									<span>Sebelumnya</span>
-								</button>
-
-								<div className="flex items-center justify-center gap-1 sm:gap-2 flex-wrap">
-									{questions.map((_, index) => (
-										<button
-											key={index}
-											onClick={() => setCurrentQuestionIndex(index)}
-											title={`Soal ${index + 1}${
-												answers[questions[index].id]
-													? " (terjawab)"
-													: " (belum dijawab)"
-											}`}
-											className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg font-medium text-xs sm:text-sm transition-all ${
-												index === currentQuestionIndex
-													? "bg-blue-600 text-white shadow-lg scale-110"
-													: answers[questions[index].id]
-													? "bg-green-500 text-white hover:bg-green-600"
-													: "bg-gray-300 text-gray-700 hover:bg-gray-400"
-											}`}
-										>
-											{index === currentQuestionIndex ? (
-												<span>●</span>
-											) : answers[questions[index].id] ? (
-												<span>✓</span>
-											) : (
-												index + 1
-											)}
-										</button>
-									))}
-								</div>
-
-								{submission?.status === "submitted" ? (
-									<button
-										className="px-4 py-2 sm:px-6 sm:py-3 bg-gray-400 text-white cursor-not-allowed rounded-lg font-medium text-sm sm:text-base"
-										disabled
-									>
-										✓ Sudah Dikumpulkan
-									</button>
-								) : currentQuestionIndex === questions.length - 1 ? (
-									<button
-										onClick={() => setShowSubmitConfirm(true)}
-										className="px-4 py-2 sm:px-6 sm:py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium text-sm sm:text-base transition shadow-md flex items-center justify-center gap-2"
-									>
-										<span>📤</span>
-										<span>Kumpulkan</span>
-									</button>
-								) : (
+								{/* Action Buttons */}
+								<div className="flex gap-3 pt-6 border-t border-gray-300">
 									<button
 										onClick={() =>
 											setCurrentQuestionIndex(
-												Math.min(questions.length - 1, currentQuestionIndex + 1)
+												Math.max(0, currentQuestionIndex - 1)
 											)
 										}
-										className="px-4 py-2 sm:px-6 sm:py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm sm:text-base transition shadow-md flex items-center justify-center gap-2"
+										disabled={currentQuestionIndex === 0}
+										className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white rounded-lg font-semibold transition"
 									>
-										<span>Selanjutnya</span>
-										<span>→</span>
+										← Sebelumnya
 									</button>
-								)}
+									<button
+										onClick={() => handleClearAnswer(currentQuestion.id)}
+										className="flex-1 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-semibold transition"
+									>
+										🔄 Ragu-ragu
+									</button>
+									{currentQuestionIndex === questions.length - 1 ? (
+										<button
+											onClick={() => setShowSubmitConfirm(true)}
+											className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition"
+										>
+											Kumpulkan →
+										</button>
+									) : (
+										<button
+											onClick={() =>
+												setCurrentQuestionIndex(
+													Math.min(
+														questions.length - 1,
+														currentQuestionIndex + 1
+													)
+												)
+											}
+											className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition"
+										>
+											Selanjutnya →
+										</button>
+									)}
+								</div>
 							</div>
 						</div>
 					</div>
-
-					{/* Question List Modal/Sidebar */}
-					{showQuestionList && (
+				</div>
+				{/* Question List Modal */}
+				{showQuestionList && (
+					<div
+						className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center"
+						onClick={() => setShowQuestionList(false)}
+					>
 						<div
-							className="fixed inset-0 z-50 bg-black bg-opacity-50 md:relative md:bg-transparent md:z-10"
-							onClick={() => setShowQuestionList(false)}
+							className="bg-white rounded-lg shadow-2xl p-8 max-w-2xl w-full mx-4"
+							onClick={(e) => e.stopPropagation()}
 						>
-							<div
-								className="fixed inset-y-0 right-0 w-full sm:w-80 bg-white shadow-2xl md:shadow-none overflow-y-auto md:relative md:border-l md:border-gray-200"
-								onClick={(e) => e.stopPropagation()}
-							>
-								<div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
-									<h2 className="text-lg font-bold text-gray-900">
-										Daftar Soal
-									</h2>
-									<button
-										onClick={() => setShowQuestionList(false)}
-										className="md:hidden p-1 hover:bg-gray-200 rounded-lg"
+							<div className="flex items-center justify-between mb-4">
+								<h2 className="text-xl font-bold text-gray-900">Daftar Soal</h2>
+								<button
+									onClick={() => setShowQuestionList(false)}
+									className="text-gray-400 hover:text-gray-600 transition p-1"
+								>
+									<svg
+										className="w-6 h-6"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
 									>
-										✕
-									</button>
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth={2}
+											d="M6 18L18 6M6 6l12 12"
+										/>
+									</svg>
+								</button>
+							</div>
+
+							{/* Stats */}
+							<div className="flex gap-6 mb-5 pb-5 border-b border-gray-200">
+								<div className="bg-green-50 px-4 py-2 rounded-lg">
+									<p className="text-xs text-gray-600 font-medium">Terjawab</p>
+									<p className="text-lg font-bold text-green-600">
+										{answeredCount}
+									</p>
 								</div>
+								<div className="bg-gray-50 px-4 py-2 rounded-lg">
+									<p className="text-xs text-gray-600 font-medium">Belum</p>
+									<p className="text-lg font-bold text-gray-600">
+										{questions.length - answeredCount}
+									</p>
+								</div>
+							</div>
 
-								<div className="p-4 space-y-2">
-									<div className="mb-4 pb-4 border-b border-gray-200">
-										<div className="text-sm text-gray-600">
-											<p className="font-medium">
-												Terjawab:{" "}
-												<span className="text-green-600 font-bold">
-													{answeredCount}
-												</span>
-											</p>
-											<p className="font-medium">
-												Belum:{" "}
-												<span className="text-gray-600 font-bold">
-													{questions.length - answeredCount}
-												</span>
-											</p>
-										</div>
-									</div>
-
-									{questions.map((q, idx) => (
+							{/* Question Grid */}
+							<div className="grid grid-cols-6 gap-2 mb-6">
+								{questions.map((q: any, idx: number) => {
+									const isAnswered =
+										answers[q.id] != null &&
+										answers[q.id].toString().trim() !== "";
+									return (
 										<button
-											key={q.id}
+											key={idx}
 											onClick={() => {
 												setCurrentQuestionIndex(idx);
 												setShowQuestionList(false);
 											}}
-											className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
+											className={`w-12 h-12 rounded-lg font-bold text-xs transition flex items-center justify-center shadow-sm hover:shadow-md ${
 												idx === currentQuestionIndex
-													? "border-blue-600 bg-blue-50"
-													: answers[q.id]
-													? "border-green-400 bg-green-50 hover:bg-green-100"
-													: "border-gray-300 hover:border-gray-400 bg-white"
+													? "bg-blue-600 text-white ring-2 ring-blue-400"
+													: isAnswered
+													? "bg-green-500 text-white hover:bg-green-600"
+													: "bg-gray-200 text-gray-700 hover:bg-gray-300"
 											}`}
 										>
-											<div className="flex items-center gap-2">
-												<span className="font-medium text-gray-900">
-													Soal {idx + 1}
-												</span>
-												{answers[q.id] && (
-													<span className="text-green-600 font-bold">✓</span>
-												)}
-											</div>
-											<p className="text-xs text-gray-600 mt-1 line-clamp-2">
-												{q.questionText}
-											</p>
-											<p className="text-xs text-gray-500 mt-1">
-												{q.points} poin
-											</p>
+											{isAnswered ? "✓" : idx + 1}
 										</button>
-									))}
-								</div>
-							</div>
-						</div>
-					)}
-				</div>
-			</Layout>
-
-			{/* Submit Confirmation Modal */}
-			{showSubmitConfirm && (
-				<div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-end sm:items-center justify-center p-4">
-					<div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md shadow-2xl animate-in slide-in-from-bottom-5 sm:scale-in-95">
-						{/* Header */}
-						<div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-6 rounded-t-3xl sm:rounded-t-2xl">
-							<h2 className="text-2xl font-bold flex items-center gap-3">
-								<span>⚠️</span>
-								<span>Konfirmasi Pengumpulan</span>
-							</h2>
-						</div>
-
-						{/* Content */}
-						<div className="px-6 py-6 space-y-5">
-							<div>
-								<p className="text-gray-900 font-medium mb-2">
-									Anda yakin ingin mengumpulkan ujian?
-								</p>
-								<p className="text-sm text-gray-600">
-									Soal yang terjawab:{" "}
-									<span className="font-bold text-green-600">
-										{answeredCount}
-									</span>{" "}
-									dari <span className="font-bold">{questions.length}</span>
-								</p>
-								{questions.length - answeredCount > 0 && (
-									<p className="text-sm text-orange-600 font-medium mt-2">
-										Masih ada {questions.length - answeredCount} soal yang belum
-										dijawab
-									</p>
-								)}
+									);
+								})}
 							</div>
 
-							{/* Warning Notice */}
-							<div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
-								<div className="flex gap-3">
-									<span className="text-2xl">🔴</span>
-									<div>
-										<p className="font-bold text-red-900 mb-1">
-											⚠️ Perhatian Penting
-										</p>
-										<p className="text-sm text-red-800">
-											Ujian ini{" "}
-											<span className="font-bold">TIDAK BISA DIULANG</span>{" "}
-											setelah dikumpulkan. Pastikan semua jawaban sudah benar
-											sebelum melanjutkan.
-										</p>
-									</div>
-								</div>
-							</div>
-
-							{/* Remaining Time */}
-							{timeLeft > 0 && (
-								<div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-									<p className="text-sm text-blue-800">
-										<span className="font-bold">
-											Sisa waktu: {formatTime(timeLeft)}
-										</span>
-										<br />
-										Anda masih punya waktu untuk memeriksa kembali jawaban.
-									</p>
-								</div>
-							)}
-						</div>
-
-						{/* Actions */}
-						<div className="border-t border-gray-200 px-6 py-4 flex gap-3 flex-col-reverse sm:flex-row">
 							<button
-								onClick={() => setShowSubmitConfirm(false)}
-								disabled={isSubmitting}
-								className="px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-900 font-semibold rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+								onClick={() => setShowSubmitConfirm(true)}
+								disabled={answeredCount < questions.length}
+								className="w-full mt-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-semibold text-sm transition shadow-md hover:shadow-lg"
 							>
-								<span>←</span>
-								<span>Kembali Periksa</span>
-							</button>
-							<button
-								onClick={handleSubmit}
-								disabled={
-									isSubmitting ||
-									Object.keys(answers).length < (questions?.length || 0)
-								}
-								className="px-4 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-							>
-								{isSubmitting ? (
-									<>
-										<span className="inline-block animate-spin">⏳</span>
-										<span>Mengumpulkan...</span>
-									</>
-								) : Object.keys(answers).length < (questions?.length || 0) ? (
-									<>
-										<span>⚠️</span>
-										<span>Jawab Semua Soal Terlebih Dahulu</span>
-									</>
-								) : (
-									<>
-										<span>✓</span>
-										<span>Ya, Kumpulkan Sekarang</span>
-									</>
-								)}
-							</button>
-						</div>
-						<div className="mt-3">
-							<button
-								onClick={() => handleClearAnswer(currentQuestion.id)}
-								disabled={submission?.status === "submitted"}
-								className="text-sm text-red-600 hover:underline"
-							>
-								Batal / Hapus Jawaban
+								Kumpulkan Ujian
 							</button>
 						</div>
 					</div>
-				</div>
-			)}
+				)}
+
+				{/* Submit Confirmation Modal */}
+				{showSubmitConfirm && (
+					<div
+						className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center"
+						onClick={() => setShowSubmitConfirm(false)}
+					>
+						<div
+							className="bg-white rounded-lg shadow-2xl max-w-md w-full mx-4"
+							onClick={(e) => e.stopPropagation()}
+						>
+							{/* Header */}
+							<div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
+								<h2 className="text-xl font-bold text-white">
+									Konfirmasi Pengumpulan
+								</h2>
+							</div>
+
+							{/* Content */}
+							<div className="px-6 py-6 space-y-5">
+								<div>
+									<p className="text-gray-900 font-medium mb-2">
+										Anda yakin ingin mengumpulkan ujian?
+									</p>
+									<p className="text-sm text-gray-600">
+										Soal yang terjawab:{" "}
+										<span className="font-bold text-green-600">
+											{answeredCount}
+										</span>{" "}
+										dari <span className="font-bold">{questions.length}</span>
+									</p>
+									{questions.length - answeredCount > 0 && (
+										<p className="text-sm text-orange-600 font-medium mt-2">
+											Masih ada {questions.length - answeredCount} soal yang
+											belum dijawab
+										</p>
+									)}
+								</div>
+
+								{/* Warning Notice */}
+								<div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+									<div className="flex gap-3">
+										<span className="text-xl">⚠️</span>
+										<div>
+											<p className="font-bold text-red-900 mb-1">
+												Perhatian Penting
+											</p>
+											<p className="text-sm text-red-800">
+												Ujian ini{" "}
+												<span className="font-bold">TIDAK BISA DIULANG</span>{" "}
+												setelah dikumpulkan.
+											</p>
+										</div>
+									</div>
+								</div>
+
+								{/* Remaining Time */}
+								{timeLeft > 0 && (
+									<div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+										<p className="text-sm text-blue-800">
+											<span className="font-bold">
+												Sisa waktu: {formatTime(timeLeft)}
+											</span>
+											<br />
+											Anda masih punya waktu untuk memeriksa kembali jawaban.
+										</p>
+									</div>
+								)}
+
+								{/* Buttons */}
+								<div className="flex gap-3 pt-4">
+									<button
+										onClick={() => setShowSubmitConfirm(false)}
+										className="flex-1 px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-lg font-semibold transition"
+									>
+										Batal
+									</button>
+									<button
+										onClick={handleSubmit}
+										disabled={isSubmitting || answeredCount < questions.length}
+										className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition"
+									>
+										{isSubmitting ? "Mengirim..." : "Ya, Kumpulkan"}
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
+				)}
+			</Layout>
 		</>
 	);
 }

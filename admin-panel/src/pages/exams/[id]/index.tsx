@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { getImageUrl } from "@/lib/imageUrl";
+import ConfirmationModal from "@/components/ConfirmationModal";
 
 interface Question {
 	id: number;
@@ -59,6 +60,16 @@ export default function ExamDetailPage() {
 	const [loading, setLoading] = useState(true);
 	const [expandedQuestion, setExpandedQuestion] = useState<number | null>(null);
 	const [generatingToken, setGeneratingToken] = useState(false);
+	const [statusLoading, setStatusLoading] = useState(false);
+
+	// Modal states for confirmations
+	const [deleteModal, setDeleteModal] = useState(false);
+	const [statusModal, setStatusModal] = useState<{
+		isOpen: boolean;
+		action: string | null;
+		title: string;
+		message: string;
+	}>({ isOpen: false, action: null, title: "", message: "" });
 
 	useEffect(() => {
 		if (id) {
@@ -80,14 +91,51 @@ export default function ExamDetailPage() {
 	};
 
 	const handleDelete = async () => {
-		if (!confirm("Yakin ingin menghapus ujian ini?")) return;
-
 		try {
 			await api.delete(`/exams/${id}`);
 			toast.success("Ujian berhasil dihapus");
 			router.push("/exams");
 		} catch (error) {
 			toast.error("Gagal menghapus ujian");
+		}
+	};
+
+	const openDeleteModal = () => {
+		setDeleteModal(true);
+	};
+
+	const handleStatusChangeRequest = (newStatus: string) => {
+		const statusMessages: Record<string, { title: string; message: string }> = {
+			published: {
+				title: "Publish Ujian?",
+				message:
+					"Yakin ingin mempublish ujian ini? Ujian akan dapat diakses oleh siswa.",
+			},
+			ongoing: {
+				title: "Mulai Ujian Sekarang?",
+				message:
+					"Yakin ingin memulai ujian ini sekarang? Waktu akan mulai dihitung untuk siswa.",
+			},
+			draft: {
+				title: "Kembali ke Draft?",
+				message:
+					"Yakin ingin mengembalikan ujian ke draft? Akses ujian akan ditutup untuk siswa.",
+			},
+			closed: {
+				title: "Tutup Ujian?",
+				message:
+					"Yakin ingin menutup ujian ini? Siswa tidak bisa lagi mengerjakan.",
+			},
+		};
+
+		const config = statusMessages[newStatus];
+		if (config) {
+			setStatusModal({
+				isOpen: true,
+				action: newStatus,
+				title: config.title,
+				message: config.message,
+			});
 		}
 	};
 
@@ -102,6 +150,32 @@ export default function ExamDetailPage() {
 			toast.error("Gagal membuat token");
 		} finally {
 			setGeneratingToken(false);
+		}
+	};
+
+	const handleStatusChange = async (newStatus: string) => {
+		try {
+			setStatusLoading(true);
+			await api.patch(`/exams/${id}`, {
+				status: newStatus,
+			});
+			setExam({ ...exam!, status: newStatus });
+
+			const statusMessages: Record<string, string> = {
+				draft: "Ujian dikembalikan ke draft",
+				published: "Ujian berhasil dipublish",
+				ongoing: "Ujian dimulai",
+				closed: "Ujian ditutup",
+			};
+
+			toast.success(statusMessages[newStatus] || "Status berhasil diubah");
+			setStatusModal({ isOpen: false, action: null, title: "", message: "" });
+		} catch (err: any) {
+			console.error("Failed to change status:", err);
+			const msg = err?.response?.data?.message || "Gagal mengubah status ujian";
+			toast.error(msg);
+		} finally {
+			setStatusLoading(false);
 		}
 	};
 
@@ -168,34 +242,92 @@ export default function ExamDetailPage() {
 							</div>
 							<p className="text-gray-600 mb-4">{exam.description}</p>
 						</div>
-						<div className="flex gap-2 flex-shrink-0">
+						<div className="flex gap-2 flex-shrink-0 flex-wrap">
 							<Link href={`/exams/${exam.id}/edit`} className="btn btn-primary">
 								Edit
 							</Link>
-							{exam.status !== "published" && (
+
+							{/* Status Management Buttons */}
+							{exam.status === "draft" && (
 								<button
-									onClick={async () => {
+									onClick={() => {
 										if (!confirm("Yakin ingin mempublish ujian ini?")) return;
-										try {
-											// Use PATCH /exams/:id which allows teacher role as well
-											await api.patch(`/exams/${exam.id}`, {
-												status: "published",
-											});
-											setExam({ ...exam, status: "published" });
-											toast.success("Ujian berhasil dipublish");
-										} catch (err: any) {
-											console.error("Failed to publish exam:", err);
-											const msg =
-												err?.response?.data?.message ||
-												"Gagal mempublish ujian";
-											toast.error(msg);
-										}
+										handleStatusChange("published");
 									}}
-									className="btn btn-success"
+									disabled={statusLoading}
+									className="btn btn-success disabled:opacity-50"
 								>
-									Publish
+									{statusLoading ? "..." : "Publish"}
 								</button>
 							)}
+
+							{exam.status === "published" && (
+								<>
+									<button
+										onClick={() => {
+											if (!confirm("Yakin ingin memulai ujian ini sekarang?"))
+												return;
+											handleStatusChange("ongoing");
+										}}
+										disabled={statusLoading}
+										className="btn bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+									>
+										{statusLoading ? "..." : "Mulai Sekarang"}
+									</button>
+									<button
+										onClick={() => {
+											if (!confirm("Yakin ingin mengembalikan ke draft?"))
+												return;
+											handleStatusChange("draft");
+										}}
+										disabled={statusLoading}
+										className="btn btn-secondary disabled:opacity-50"
+									>
+										{statusLoading ? "..." : "Kembali ke Draft"}
+									</button>
+								</>
+							)}
+
+							{exam.status === "ongoing" && (
+								<>
+									<button
+										onClick={() => {
+											if (!confirm("Yakin ingin menutup ujian ini?")) return;
+											handleStatusChange("closed");
+										}}
+										disabled={statusLoading}
+										className="btn bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+									>
+										{statusLoading ? "..." : "Tutup Ujian"}
+									</button>
+									<button
+										onClick={() => {
+											if (!confirm("Yakin ingin mengembalikan ke published?"))
+												return;
+											handleStatusChange("published");
+										}}
+										disabled={statusLoading}
+										className="btn btn-secondary disabled:opacity-50"
+									>
+										{statusLoading ? "..." : "Kembali ke Published"}
+									</button>
+								</>
+							)}
+
+							{exam.status === "closed" && (
+								<button
+									onClick={() => {
+										if (!confirm("Yakin ingin membuka kembali ujian ini?"))
+											return;
+										handleStatusChange("published");
+									}}
+									disabled={statusLoading}
+									className="btn bg-yellow-600 text-white hover:bg-yellow-700 disabled:opacity-50"
+								>
+									{statusLoading ? "..." : "Buka Kembali"}
+								</button>
+							)}
+
 							<button onClick={handleDelete} className="btn btn-danger">
 								Hapus
 							</button>
@@ -542,6 +674,42 @@ export default function ExamDetailPage() {
 						</div>
 					)}
 				</div>
+
+				{/* Delete Modal */}
+				<ConfirmationModal
+					isOpen={deleteModal}
+					title="Hapus Ujian?"
+					message="Yakin ingin menghapus ujian ini? Semua data ujian, soal, dan hasil ujian siswa akan terhapus permanen."
+					confirmText="Hapus"
+					cancelText="Batal"
+					isDangerous
+					isLoading={statusLoading}
+					onConfirm={handleDelete}
+					onCancel={() => setDeleteModal(false)}
+				/>
+
+				{/* Status Change Modal */}
+				<ConfirmationModal
+					isOpen={statusModal.isOpen}
+					title={statusModal.title}
+					message={statusModal.message}
+					confirmText="Ya, Lanjutkan"
+					cancelText="Batal"
+					isLoading={statusLoading}
+					onConfirm={() => {
+						if (statusModal.action) {
+							handleStatusChange(statusModal.action);
+						}
+					}}
+					onCancel={() =>
+						setStatusModal({
+							isOpen: false,
+							action: null,
+							title: "",
+							message: "",
+						})
+					}
+				/>
 			</div>
 		</Layout>
 	);

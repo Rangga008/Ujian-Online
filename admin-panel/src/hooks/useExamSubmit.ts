@@ -52,8 +52,17 @@ export function useExamSubmit({
 			return false;
 		}
 
-		const startDate = new Date(formData.startTime);
-		const endDate = new Date(formData.endTime);
+		// Parse local datetime without timezone conversion
+		// Input format: "2026-01-16T11:10" (local time from user)
+		const parseLocalDateTime = (dateTimeStr: string): Date => {
+			const [date, time] = dateTimeStr.split("T");
+			const [year, month, day] = date.split("-").map(Number);
+			const [hour, minute] = time.split(":").map(Number);
+			return new Date(year, month - 1, day, hour, minute, 0);
+		};
+
+		const startDate = parseLocalDateTime(formData.startTime);
+		const endDate = parseLocalDateTime(formData.endTime);
 		if (startDate >= endDate) {
 			toast.error("Waktu selesai harus lebih besar dari waktu mulai");
 			return false;
@@ -145,6 +154,19 @@ export function useExamSubmit({
 						console.error("Image compression failed:", err);
 						imageUrl = await uploadImage(q.imageFile);
 					}
+				} else if (q.imageUrl && q.imageUrl.startsWith("data:image/")) {
+					// Handle base64 image data from UI (convert to file and upload)
+					console.log(`🖼️ Q${idx}: Converting base64 imageUrl to file`);
+					try {
+						const file = dataUrlToFile(q.imageUrl, `question-${idx}.png`);
+						if (file) {
+							const compressed = await compressImageBrowser(file, 1920, 0.75);
+							imageUrl = await uploadImage(compressed.file);
+						}
+					} catch (err) {
+						console.error("Base64 image conversion/upload failed:", err);
+						imageUrl = "";
+					}
 				}
 
 				// Coerce and validate points to ensure backend receives a number >= 1
@@ -161,7 +183,7 @@ export function useExamSubmit({
 					optionImagePreviewsLength: q.optionImagePreviews?.length,
 				});
 
-				// Collect files to upload
+				// Collect files to upload (keep null positions!)
 				let filesToUpload: (File | null)[] = [];
 
 				if (
@@ -169,10 +191,11 @@ export function useExamSubmit({
 					Array.isArray(q.optionImageFiles) &&
 					q.optionImageFiles.length > 0
 				) {
-					// Use uploaded files directly
+					// Use uploaded files directly (with nulls preserved for position mapping)
 					console.log(
 						`📸 Q${idx}: Using optionImageFiles:`,
-						q.optionImageFiles.length
+						q.optionImageFiles.length,
+						"files to upload"
 					);
 					filesToUpload = q.optionImageFiles;
 				} else if (
@@ -181,8 +204,8 @@ export function useExamSubmit({
 				) {
 					// Convert base64 previews to Files
 					console.log(`📸 Q${idx}: Converting optionImagePreviews to Files`);
-					filesToUpload = q.optionImagePreviews
-						.map((dataUrl: string, idx: number) => {
+					filesToUpload = q.optionImagePreviews.map(
+						(dataUrl: string, idx: number) => {
 							if (!dataUrl || dataUrl === "") return null;
 							try {
 								return dataUrlToFile(dataUrl, `option-${idx}.png`);
@@ -190,16 +213,17 @@ export function useExamSubmit({
 								console.error(`Failed to convert preview ${idx}:`, err);
 								return null;
 							}
-						})
-						.filter((f) => f !== null);
+						}
+					);
 				}
 
-				// Validate option images before upload
-				if (filesToUpload.length > 0) {
+				// Validate option images before upload (only check non-null files)
+				const nonNullFiles = filesToUpload.filter((f) => f !== null) as File[];
+				if (nonNullFiles.length > 0) {
 					try {
 						validateOptionImages(filesToUpload);
 						console.log(
-							`📸 Q${idx}: Uploading ${filesToUpload.length} option images`
+							`📸 Q${idx}: Uploading ${nonNullFiles.length} option images out of ${filesToUpload.length} positions`
 						);
 						optionImages = await uploadOptionImages(filesToUpload, true);
 						console.log(`📸 Q${idx}: Final optionImages URLs:`, optionImages);
@@ -222,18 +246,18 @@ export function useExamSubmit({
 
 				console.log(`📸 Q${idx}: Final optionImages array:`, optionImages);
 
-				// Initialize filteredOptionImages (will be updated for multiple choice below)
-				let filteredOptionImages = Array.isArray(optionImages)
-					? [...optionImages]
-					: [];
-
 				const base: any = {
 					...(q.id && { id: q.id }), // Include ID if exists (for updates)
 					questionText: q.questionText,
 					type: q.type,
 					points,
 					orderIndex: typeof q.orderIndex === "number" ? q.orderIndex : idx,
-					imageUrl: imageUrl || q.imageUrl || "",
+					// Only use uploaded imageUrl or existing DB path, never base64 data
+					imageUrl:
+						imageUrl ||
+						(q.imageUrl && !q.imageUrl.startsWith("data:image/")
+							? q.imageUrl
+							: ""),
 				};
 
 				console.log(`📋 Processing Q${idx}:`, {
@@ -242,7 +266,6 @@ export function useExamSubmit({
 					hasId: !!q.id,
 					hasOptionImages: optionImages.length > 0,
 					optionImagesCount: optionImages.length,
-					filteredOptionImagesLength: filteredOptionImages.length,
 				});
 
 				if (q.type === "essay") {
@@ -264,116 +287,34 @@ export function useExamSubmit({
 				}
 
 				const optionsRaw = q.options || [];
-				// Filter options: remove empty ones UNLESS they have a corresponding image
+				// DON'T filter options - keep all of them to preserve index mapping for correctAnswer
+				// Just ensure optionImages array matches optionsRaw length by padding with ""
 				const hasOptionImages = optionImages && optionImages.length > 0;
-				const filteredOptions = optionsRaw
-					.map((o, idx) => {
-						const trimmed = o.trim();
-						// Keep non-empty options always
-						if (trimmed) return trimmed;
-						// Keep empty options only if they have an image
-						if (hasOptionImages && optionImages[idx]) {
-							return ""; // Keep the empty placeholder
-						}
-						return null; // Mark for removal
-					})
-					.filter((o) => o !== null) as string[];
 
-				// Also filter optionImages to match filteredOptions length
-				if (filteredOptions.length !== optionImages.length) {
-					console.log(
-						`📸 Q${idx}: Filtering optionImages from ${optionImages.length} to ${filteredOptions.length}`
-					);
-					// Keep only images for options that weren't filtered out
-					const imageKeepMap: boolean[] = optionsRaw.map((o, idx) => {
-						const trimmed = o.trim();
-						if (trimmed) return true; // Keep image for non-empty option
-						if (hasOptionImages && optionImages[idx]) return true; // Keep image for photo-only option
-						return false; // Remove image for filtered-out option
-					});
-					filteredOptionImages = optionImages.filter(
-						(_, idx) => imageKeepMap[idx]
-					);
-					console.log(
-						`📸 Q${idx}: Final filteredOptionImages:`,
-						filteredOptionImages
-					);
+				// Ensure optionImages length matches optionsRaw length
+				while (optionImages.length < optionsRaw.length) {
+					optionImages.push("");
 				}
+				optionImages = optionImages.slice(0, optionsRaw.length);
+
+				console.log(`📸 Q${idx}: Aligned optionImages to options:`, {
+					optionsCount: optionsRaw.length,
+					optionImagesCount: optionImages.length,
+					optionImages: optionImages,
+				});
+
+				const filteredOptions = optionsRaw;
 
 				if (q.type === "mixed_multiple_choice") {
-					// Parse correctAnswer which may be in several formats:
-					// - "A,B,C" or "A; B; C" or similar delimited
-					// - "0,1,2" (indices into options array)
-					// - Pre-parsed array (shouldn't happen in UI, but handle it)
+					// Parse correctAnswer which should already be in index format like "0,1,3"
+					// Since we're NOT filtering options, indices map directly to positions
+					const corrStr = String(q.correctAnswer || "").trim();
 
-					let selectedFilteredIndexes: number[] = [];
-
-					// Parse raw correctAnswer
-					const correctRaw = (q.correctAnswer || "").toString().trim();
-					const origToFiltered: Record<number, number | undefined> = {};
-					// Build mapping from original indices to filtered indices
-					// IMPORTANT: Don't skip empty options - they may have images and be part of correctAnswer
-					for (let origIdx = 0; origIdx < optionsRaw.length; origIdx++) {
-						const origOpt = optionsRaw[origIdx]?.trim() || "";
-						// For non-empty options, find their position in filteredOptions
-						// For empty options (photo-only), map directly if they exist in filtered
-						if (origOpt) {
-							// Non-empty option text: match in filteredOptions
-							const filtPos = filteredOptions.indexOf(origOpt);
-							if (filtPos >= 0) {
-								origToFiltered[origIdx] = filtPos;
-							}
-						} else {
-							// Empty option (photo-only): For MMC with photos, keep the index mapping
-							// Since filteredOptions still has the option even if text is empty (if it has image)
-							origToFiltered[origIdx] = origIdx; // Map to same index
-						}
-					}
-
-					// Parse tokens from correctRaw
-					const tokens = correctRaw
-						.split(/[;,\|\/]/)
-						.map((t: string) => t.trim())
-						.filter((t: string) => t);
-
-					if (tokens.length > 0) {
-						// Try to identify format: numeric indices or letter indices or text options
-						if (tokens.every((t) => /^\d+$/.test(t))) {
-							// Numeric indices 0,1,2 -> map to filtered indices
-							const nums = tokens.map((t) => Number(t));
-							selectedFilteredIndexes = nums
-								.map((orig) => origToFiltered[orig])
-								.filter((i) => typeof i === "number");
-						} else if (tokens.every((t) => /^[A-Za-z]$/.test(t))) {
-							// Letter tokens A,B,C -> indices
-							const nums = tokens.map(
-								(t) => t.toUpperCase().charCodeAt(0) - 65
-							);
-							selectedFilteredIndexes = nums
-								.map((orig) => origToFiltered[orig])
-								.filter((i) => typeof i === "number");
-						} else {
-							// Text tokens: find matching options in filteredOptions
-							selectedFilteredIndexes = tokens
-								.map((token: string) => {
-									const lowerToken = token.toLowerCase();
-									return filteredOptions.findIndex(
-										(opt) => opt.toLowerCase() === lowerToken
-									);
-								})
-								.filter((idx: number) => idx >= 0);
-						}
-					}
-
-					const corrStr =
-						selectedFilteredIndexes.length > 0
-							? selectedFilteredIndexes.join(",")
-							: "";
 					return {
 						...base,
 						options: filteredOptions,
-						correctAnswer: corrStr,
-						optionImages: filteredOptionImages,
+						correctAnswer: corrStr, // Already in correct index format
+						optionImages: optionImages, // Aligned with options array
 					};
 				}
 
@@ -403,14 +344,23 @@ export function useExamSubmit({
 					...base,
 					options: filteredOptions,
 					correctAnswer: String(correctAnswer ?? ""),
-					optionImages: filteredOptionImages,
+					optionImages: optionImages,
 				};
 			})
 		);
 
 		console.log("📦 Processed questions to send:", processedQuestions);
+		console.log("📦 Processed questions IDs:");
+		processedQuestions.forEach((q: any, idx: number) => {
+			console.log(
+				`  Q${idx}: id=${q.id || "UNDEFINED"}, type=${
+					q.type
+				}, text="${q.questionText?.substring(0, 30)}"`
+			);
+		});
 		console.log("📦 First question details:", {
 			...(processedQuestions[0] && {
+				id: processedQuestions[0].id,
 				text: processedQuestions[0].questionText?.substring(0, 30),
 				type: processedQuestions[0].type,
 				optionImages: processedQuestions[0].optionImages,
@@ -438,6 +388,20 @@ export function useExamSubmit({
 			resolvedId = examId;
 		}
 
+		// CRITICAL: Log questions with IDs at the start of submission
+		console.log("=== EXAM SUBMIT START ===");
+		console.log("📋 Questions state at submitExam with ALL properties:");
+		questions.forEach((q: any, idx: number) => {
+			console.log(
+				`  Q${idx}: id=${q.id}, type=${
+					q.type
+				}, hasOptions=${!!q.options}, text="${q.questionText?.substring(
+					0,
+					30
+				)}"`
+			);
+		});
+
 		console.log(
 			"📝 State questions at submitExam (raw):",
 			questions.map((q: any) => ({
@@ -446,6 +410,30 @@ export function useExamSubmit({
 				hasFiles: !!q.optionImageFiles,
 			}))
 		);
+
+		console.log(
+			"⚠️ CRITICAL: Verifying all questions have IDs OR none have IDs:"
+		);
+		const questionIds = questions.map((q: any) => q.id).filter((id) => id);
+		const questionsWithoutIds = questions.filter((q: any) => !q.id);
+		console.log(
+			`  - Questions WITH id: ${questionIds.length}/${questions.length}`
+		);
+		console.log(
+			`  - Questions WITHOUT id: ${questionsWithoutIds.length}/${questions.length}`
+		);
+		if (questionIds.length > 0 && questionsWithoutIds.length > 0) {
+			console.warn(
+				"⚠️ MIXED STATE: Some questions have IDs, some don't! This may cause duplication!"
+			);
+			questions.forEach((q: any, idx: number) => {
+				console.log(
+					`  Q${idx}: id=${
+						q.id || "MISSING"
+					} - This will be CREATED instead of UPDATED`
+				);
+			});
+		}
 
 		if (!validateForm()) {
 			return false;
@@ -457,9 +445,33 @@ export function useExamSubmit({
 			// Process questions (upload images, filter options, etc)
 			const processedQuestions = await processQuestions();
 
+			// Helper function to convert local datetime to UTC ISO string
+			// Indonesia is UTC+7, so we need to subtract 7 hours to get UTC
+			const convertLocalToUTC = (dateTimeStr: string): string => {
+				// Input: "2026-01-16T11:10" (local time from user - Indonesia UTC+7)
+				// We need to convert this to UTC by subtracting 7 hours
+				// So 11:10 local → 04:10 UTC → "2026-01-16T04:10:00.000Z"
+				const [date, time] = dateTimeStr.split("T");
+				const [hour, minute] = time.split(":").map(Number);
+
+				// Create a local date object and get UTC equivalent
+				const [year, month, day] = date.split("-").map(Number);
+				const localDate = new Date(year, month - 1, day, hour, minute, 0);
+
+				// Get UTC time in ISO format
+				const utcHours = String(localDate.getUTCHours()).padStart(2, "0");
+				const utcMinutes = String(localDate.getUTCMinutes()).padStart(2, "0");
+				const utcDate = localDate.toISOString().split("T")[0];
+
+				return `${utcDate}T${utcHours}:${utcMinutes}:00.000Z`;
+			};
+
 			// Prepare exam payload
 			const examPayload: any = {
 				...formData,
+				// Convert local datetime to UTC format for backend
+				startTime: convertLocalToUTC(formData.startTime),
+				endTime: convertLocalToUTC(formData.endTime),
 				questions: processedQuestions,
 				totalScore: processedQuestions.reduce(
 					(sum, q) => sum + (q.points || 0),

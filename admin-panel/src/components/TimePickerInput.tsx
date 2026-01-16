@@ -138,10 +138,18 @@ export default function TimePickerInput({
 
 			{/* Preview */}
 			{date && time && (
-				<div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+				<div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm space-y-2">
 					<div className="text-gray-700">
-						<strong className="text-blue-600">Hasil:</strong>{" "}
-						{formatDateTimeIndonesian(date, time)}
+						<strong className="text-blue-600">📅 Tanggal Lengkap:</strong>
+						<div className="mt-1 text-gray-600 pl-4">
+							{formatDateTimeIndonesian(date, time).split("\n")[0]}
+						</div>
+					</div>
+					<div className="text-gray-700">
+						<strong className="text-blue-600">⏱️ Format Ringkas:</strong>
+						<div className="mt-1 text-gray-600 font-mono pl-4 text-xs">
+							{formatDateTimeIndonesian(date, time).split("\n")[1]}
+						</div>
 					</div>
 				</div>
 			)}
@@ -153,10 +161,14 @@ export default function TimePickerInput({
  * Format date and time to Indonesian format (24-hour)
  * Input: date="2024-01-15", time="14:30"
  * Output: "Senin, 15 Januari 2024 - 14.30"
+ * Also provides dd/mm/yyyy format: "15/01/2024 - 14.30"
  */
 function formatDateTimeIndonesian(date: string, time: string): string {
 	try {
-		const dateObj = new Date(`${date}T00:00:00`);
+		// Parse date manually to avoid timezone conversion
+		const [year, month, day] = date.split("-").map(Number);
+		const dateObj = new Date(year, month - 1, day, 0, 0, 0);
+
 		const dayNames = [
 			"Minggu",
 			"Senin",
@@ -182,14 +194,22 @@ function formatDateTimeIndonesian(date: string, time: string): string {
 		];
 
 		const dayName = dayNames[dateObj.getDay()];
-		const day = dateObj.getDate();
+		const dayNum = String(dateObj.getDate()).padStart(2, "0");
+		const monthNum = String(dateObj.getMonth() + 1).padStart(2, "0");
 		const monthName = monthNames[dateObj.getMonth()];
-		const year = dateObj.getFullYear();
+		const yearNum = dateObj.getFullYear();
 
 		// Convert time format from HH:mm to HH.mm
 		const timeDisplay = time.replace(":", ".");
 
-		return `${dayName}, ${day} ${monthName} ${year} - ${timeDisplay}`;
+		// Format 1: "Senin, 15 Januari 2024 - 14.30"
+		const formatLong = `${dayName}, ${dayNum} ${monthName} ${yearNum} - ${timeDisplay}`;
+
+		// Format 2: "15/01/2024 - 14.30" (compact)
+		const formatShort = `${dayNum}/${monthNum}/${yearNum} - ${timeDisplay}`;
+
+		// Return both formats, separated by newline for display
+		return `${formatLong}\n${formatShort}`;
 	} catch (e) {
 		return `${date} ${time.replace(":", ".")}`;
 	}

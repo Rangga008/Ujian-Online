@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Head from "next/head";
 import Layout from "@/components/Layout";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import { useRouter } from "next/router";
 import { useAuthStore } from "@/store/authStore";
 import { isPageAccessible } from "@/lib/authGuard";
@@ -35,6 +36,11 @@ export default function SemestersPage() {
 	const [loading, setLoading] = useState(true);
 	const [showModal, setShowModal] = useState(false);
 	const [editingSemester, setEditingSemester] = useState<Semester | null>(null);
+	const [confirmModal, setConfirmModal] = useState<{
+		isOpen: boolean;
+		action: "delete" | "activate" | "deactivate" | null;
+		semesterId: number | null;
+	}>({ isOpen: false, action: null, semesterId: null });
 	const [formData, setFormData] = useState({
 		name: "",
 		year: new Date().getFullYear().toString(),
@@ -99,49 +105,36 @@ export default function SemestersPage() {
 		setShowModal(true);
 	};
 
-	const handleDelete = async (id: number) => {
-		if (!confirm("Yakin ingin menghapus semester ini?")) return;
-
-		try {
-			await api.delete(`/semesters/${id}`);
-			fetchSemesters();
-		} catch (error: any) {
-			console.error("Error deleting semester:", error);
-			alert(error.response?.data?.message || "Gagal menghapus semester");
-		}
+	const handleDelete = (id: number) => {
+		setConfirmModal({ isOpen: true, action: "delete", semesterId: id });
 	};
 
-	const handleActivate = async (id: number) => {
-		if (
-			!confirm(
-				"Yakin ingin mengaktifkan semester ini? Semester lain akan dinonaktifkan."
-			)
-		)
-			return;
-
-		try {
-			await semestersApi.setActive(id);
-			fetchSemesters();
-		} catch (error: any) {
-			console.error("Error activating semester:", error);
-			alert(error.response?.data?.message || "Gagal mengaktifkan semester");
-		}
+	const handleActivate = (id: number) => {
+		setConfirmModal({ isOpen: true, action: "activate", semesterId: id });
 	};
 
-	const handleDeactivate = async (id: number) => {
-		if (
-			!confirm(
-				"Yakin ingin menonaktifkan semester ini? Pastikan mengaktifkan semester lain agar data baru tetap memiliki konteks."
-			)
-		)
-			return;
+	const handleDeactivate = (id: number) => {
+		setConfirmModal({ isOpen: true, action: "deactivate", semesterId: id });
+	};
+
+	const executeConfirmation = async () => {
+		if (!confirmModal.semesterId || !confirmModal.action) return;
 
 		try {
-			await api.patch(`/semesters/${id}`, { isActive: false });
+			if (confirmModal.action === "delete") {
+				await api.delete(`/semesters/${confirmModal.semesterId}`);
+			} else if (confirmModal.action === "activate") {
+				await semestersApi.setActive(confirmModal.semesterId);
+			} else if (confirmModal.action === "deactivate") {
+				await api.patch(`/semesters/${confirmModal.semesterId}`, {
+					isActive: false,
+				});
+			}
 			fetchSemesters();
+			setConfirmModal({ isOpen: false, action: null, semesterId: null });
 		} catch (error: any) {
-			console.error("Error deactivating semester:", error);
-			alert(error.response?.data?.message || "Gagal menonaktifkan semester");
+			console.error("Error executing confirmation:", error);
+			alert(error.response?.data?.message || "Gagal melakukan operasi");
 		}
 	};
 
@@ -485,6 +478,39 @@ export default function SemestersPage() {
 					</div>
 				</div>
 			)}
+			<ConfirmationModal
+				isOpen={confirmModal.isOpen}
+				title={
+					confirmModal.action === "delete"
+						? "Hapus Semester"
+						: confirmModal.action === "activate"
+						? "Aktifkan Semester"
+						: "Nonaktifkan Semester"
+				}
+				message={
+					confirmModal.action === "delete"
+						? "Yakin ingin menghapus semester ini?"
+						: confirmModal.action === "activate"
+						? "Yakin ingin mengaktifkan semester ini? Semester lain akan dinonaktifkan."
+						: "Yakin ingin menonaktifkan semester ini? Pastikan mengaktifkan semester lain agar data baru tetap memiliki konteks."
+				}
+				confirmText={
+					confirmModal.action === "delete"
+						? "Hapus"
+						: confirmModal.action === "activate"
+						? "Aktifkan"
+						: "Nonaktifkan"
+				}
+				cancelText="Batal"
+				isDangerous={
+					confirmModal.action === "delete" ||
+					confirmModal.action === "deactivate"
+				}
+				onConfirm={executeConfirmation}
+				onCancel={() =>
+					setConfirmModal({ isOpen: false, action: null, semesterId: null })
+				}
+			/>
 		</Layout>
 	);
 }

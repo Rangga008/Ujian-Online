@@ -3,6 +3,7 @@ import Head from "next/head";
 import Link from "next/link";
 import Layout from "@/components/Layout";
 import { useRouter } from "next/router";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import { useAuthStore } from "@/store/authStore";
 import { isPageAccessible } from "@/lib/authGuard";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
@@ -56,6 +57,15 @@ export default function UsersPage() {
 	>([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [itemsPerPage, setItemsPerPage] = useState(10);
+	const [deleteModal, setDeleteModal] = useState<{
+		isOpen: boolean;
+		id: number | null;
+		type: string;
+	}>({
+		isOpen: false,
+		id: null,
+		type: "",
+	});
 
 	const [formData, setFormData] = useState({
 		name: "",
@@ -200,16 +210,22 @@ export default function UsersPage() {
 		}
 	};
 
-	const handleDelete = async (id: number) => {
-		if (!confirm("Yakin ingin menghapus pengguna ini?")) return;
+	const handleDeleteConfirm = async () => {
+		if (!deleteModal.id) return;
 
 		try {
-			await api.delete(`/users/${id}`);
+			await api.delete(`/users/${deleteModal.id}`);
 			toast.success("Pengguna berhasil dihapus");
+			setDeleteModal({ isOpen: false, id: null, type: "" });
 			fetchUsers();
 		} catch (error: any) {
 			toast.error(error.response?.data?.message || "Gagal menghapus pengguna");
+			setDeleteModal({ isOpen: false, id: null, type: "" });
 		}
+	};
+
+	const handleDelete = (id: number) => {
+		setDeleteModal({ isOpen: true, id, type: "user" });
 	};
 
 	const handleOpenAssignModal = (user: User) => {
@@ -671,6 +687,17 @@ export default function UsersPage() {
 					</div>
 				)}
 			</div>
+
+			<ConfirmationModal
+				isOpen={deleteModal.isOpen}
+				title="Hapus Pengguna"
+				message="Yakin ingin menghapus pengguna ini? Tindakan ini tidak dapat dibatalkan."
+				confirmText="Hapus"
+				cancelText="Batal"
+				isDangerous={true}
+				onConfirm={handleDeleteConfirm}
+				onCancel={() => setDeleteModal({ isOpen: false, id: null, type: "" })}
+			/>
 		</Layout>
 	);
 }

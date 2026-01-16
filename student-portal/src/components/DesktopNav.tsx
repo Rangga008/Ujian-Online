@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useAuthStore } from "@/store/authStore";
+import { useSidebar } from "@/context/SidebarContext";
 
 export default function DesktopNav() {
 	const router = useRouter();
 	const { user } = useAuthStore();
+	const { isOpen, toggleSidebar } = useSidebar();
 
 	const navItems = [
 		{ name: "Dashboard", href: "/dashboard", icon: "🏠" },
@@ -18,17 +20,69 @@ export default function DesktopNav() {
 		router.pathname === href || router.pathname.startsWith(href + "/");
 
 	return (
-		<nav className="hidden md:block fixed left-0 top-0 bottom-0 w-56 bg-gradient-to-b from-blue-600 to-blue-700 text-white shadow-lg overflow-y-auto z-40">
-			<div className="p-6 space-y-4">
-				<div className="mb-8 pb-6 border-b border-blue-400">
-					<div className="text-2xl font-bold">Portal Siswa</div>
-					<div className="text-sm text-blue-100 mt-2">
-						{user?.studentName || user?.name}
+		<>
+			{/* Sidebar Toggle Button - visible when closed */}
+			{!isOpen && (
+				<button
+					onClick={toggleSidebar}
+					className="hidden md:block fixed top-6 left-6 z-50 p-2.5 bg-white hover:bg-gray-100 rounded-lg shadow-md transition"
+					title="Buka sidebar"
+				>
+					<svg
+						className="w-6 h-6 text-blue-600"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+					>
+						<path
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							strokeWidth={2}
+							d="M4 6h16M4 12h16M4 18h16"
+						/>
+					</svg>
+				</button>
+			)}
+
+			{/* Sidebar */}
+			<nav
+				className={`hidden md:flex fixed left-0 top-0 bottom-0 w-64 bg-white text-gray-900 shadow-xl overflow-y-auto z-40 transition-transform duration-300 flex-col ${
+					isOpen ? "translate-x-0" : "-translate-x-full"
+				}`}
+			>
+				{/* Header */}
+				<div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 flex items-center justify-between">
+					<div className="flex-1">
+						<div className="text-xl font-bold">Portal Siswa</div>
+						<div className="text-sm text-blue-100 mt-1">
+							{user?.studentName || user?.name}
+						</div>
+						<div className="text-xs text-blue-200 mt-0.5">NIS: {user?.nis}</div>
 					</div>
-					<div className="text-xs text-blue-200">NIS: {user?.nis}</div>
+					{/* Close Button */}
+					<button
+						onClick={toggleSidebar}
+						className="p-1.5 hover:bg-blue-500 rounded-lg transition ml-2"
+						title="Tutup sidebar"
+					>
+						<svg
+							className="w-5 h-5"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								d="M6 18L18 6M6 6l12 12"
+							/>
+						</svg>
+					</button>
 				</div>
 
-				<div className="space-y-2">
+				{/* Navigation */}
+				<div className="flex-1 px-4 py-6 space-y-2">
 					{navItems.map((item) => {
 						const active = isActive(item.href);
 						return (
@@ -36,8 +90,8 @@ export default function DesktopNav() {
 								<a
 									className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${
 										active
-											? "bg-white bg-opacity-20 text-white font-semibold"
-											: "text-blue-100 hover:bg-white hover:bg-opacity-10"
+											? "bg-blue-100 text-blue-700 font-semibold"
+											: "text-gray-700 hover:bg-gray-100"
 									}`}
 								>
 									<span className="text-xl">{item.icon}</span>
@@ -47,7 +101,12 @@ export default function DesktopNav() {
 						);
 					})}
 				</div>
-			</div>
-		</nav>
+
+				{/* Footer in Sidebar */}
+				<div className="border-t border-gray-200 px-4 py-4 text-xs text-gray-500 text-center">
+					<p>Portal Siswa v1.0</p>
+				</div>
+			</nav>
+		</>
 	);
 }

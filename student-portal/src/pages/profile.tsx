@@ -1,4 +1,6 @@
+import { useState } from "react";
 import Layout from "@/components/Layout";
+import LogoutConfirmationModal from "@/components/LogoutConfirmationModal";
 import { useRouter } from "next/router";
 import { useAuthStore } from "@/store/authStore";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
@@ -7,9 +9,15 @@ export default function ProfilePage() {
 	const router = useRouter();
 	const { user, logout } = useAuthStore();
 	const { isAuthenticated } = useAuthGuard();
+	const [logoutModal, setLogoutModal] = useState(false);
 
-	const handleLogout = () => {
+	const handleLogoutClick = () => {
+		setLogoutModal(true);
+	};
+
+	const handleConfirmLogout = async () => {
 		logout();
+		setLogoutModal(false);
 		router.push("/login");
 	};
 
@@ -78,8 +86,8 @@ export default function ProfilePage() {
 						</p>
 						<div className="space-y-3">
 							<button
-								onClick={handleLogout}
-								className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition shadow-md"
+								onClick={handleLogoutClick}
+								className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition shadow-md hover:shadow-lg"
 							>
 								<span>🚪</span>
 								<span>Logout</span>
@@ -88,6 +96,12 @@ export default function ProfilePage() {
 					</div>
 				</div>
 			</div>
+
+			<LogoutConfirmationModal
+				isOpen={logoutModal}
+				onConfirm={handleConfirmLogout}
+				onCancel={() => setLogoutModal(false)}
+			/>
 		</Layout>
 	);
 }

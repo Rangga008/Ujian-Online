@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Head from "next/head";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import api from "@/lib/api";
 import Link from "next/link";
 import toast from "react-hot-toast";
@@ -22,6 +23,15 @@ export default function ExamsPage() {
 	const [classes, setClasses] = useState<Class[]>([]);
 	const [selectedClass, setSelectedClass] = useState<string>("all");
 	const [selectedGrade, setSelectedGrade] = useState<string>("all");
+	const [deleteModal, setDeleteModal] = useState<{
+		isOpen: boolean;
+		id: number | null;
+		type: string;
+	}>({
+		isOpen: false,
+		id: null,
+		type: "",
+	});
 
 	useEffect(() => {
 		fetchInitialData();
@@ -86,16 +96,22 @@ export default function ExamsPage() {
 			? filteredByGrade
 			: filteredByGrade.filter((e) => e.semesterId === selectedSemesterId);
 
-	const handleDelete = async (id: number) => {
-		if (!confirm("Yakin ingin menghapus ujian ini?")) return;
+	const handleDeleteConfirm = async () => {
+		if (!deleteModal.id) return;
 
 		try {
-			await api.delete(`/exams/${id}`);
+			await api.delete(`/exams/${deleteModal.id}`);
 			toast.success("Ujian berhasil dihapus");
+			setDeleteModal({ isOpen: false, id: null, type: "" });
 			fetchExams();
 		} catch (error) {
 			toast.error("Gagal menghapus ujian");
+			setDeleteModal({ isOpen: false, id: null, type: "" });
 		}
+	};
+
+	const handleDelete = (id: number) => {
+		setDeleteModal({ isOpen: true, id, type: "exam" });
 	};
 
 	const getStatusBadge = (status: string) => {
@@ -294,6 +310,16 @@ export default function ExamsPage() {
 					</div>
 				)}
 			</div>
+			<ConfirmationModal
+				isOpen={deleteModal.isOpen}
+				title="Hapus Ujian"
+				message="Yakin ingin menghapus ujian ini? Tindakan ini tidak dapat dibatalkan."
+				confirmText="Hapus"
+				cancelText="Batal"
+				isDangerous={true}
+				onConfirm={handleDeleteConfirm}
+				onCancel={() => setDeleteModal({ isOpen: false, id: null, type: "" })}
+			/>
 		</Layout>
 	);
 }

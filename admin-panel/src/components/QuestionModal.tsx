@@ -65,27 +65,25 @@ export default function QuestionModal({
 		if (!isOpen) return;
 
 		if (initialData) {
-			// Normalize correctAnswer based on question type
-			let corrected = initialData.correctAnswer || "";
+			// Normalize correctAnswer to always use indices
+			let corrected = "";
 
 			// Initialize allowPhotoAnswer if provided
 			const allowPhotoAnswer = (initialData as any).allowPhotoAnswer || false;
 
 			if (initialData.type === "mixed_multiple_choice" && initialData.options) {
 				// For mixed_multiple_choice, correctAnswer should be indices (e.g., "0,2,4")
-				// Parse it by splitting on various separators
 				let parts = (initialData.correctAnswer || "")
 					.split(/[,;|\/\s]+/)
 					.map((p: string) => p.trim())
 					.filter(Boolean);
 
-				// Filter to keep only valid numeric indices
+				// Ensure all parts are valid numeric indices
 				const indices = parts
 					.map((text) => {
 						// Try to convert to number
 						if (/^\d+$/.test(text)) {
 							const num = Number(text);
-							// Check if this index is valid
 							if (num >= 0 && num < (initialData.options?.length || 0)) {
 								return num;
 							}
@@ -107,45 +105,42 @@ export default function QuestionModal({
 				initialData.type === "multiple_choice" &&
 				initialData.options
 			) {
-				// For single-choice multiple choice, backend may store an index or option text
-				const normalize = (s: string) =>
-					(s || "").toString().replace(/\s+/g, " ").trim();
-				const lowerOptions = (initialData.options || []).map((o: string) =>
-					normalize(o).toLowerCase()
-				);
-
+				// For single-choice, always ensure we have a valid index
 				const rawCA = String(initialData.correctAnswer || "").trim();
-				const normalizeToken = (s: string) =>
-					(s || "").toString().replace(/\s+/g, " ").trim();
+
 				if (rawCA) {
-					// Check if rawCA is numeric index first (for photo-only options)
+					// Check if it's already a numeric index
 					if (/^\d+$/.test(rawCA)) {
 						const idx = Number(rawCA);
 						if (idx >= 0 && idx < initialData.options.length) {
-							// Keep the index for photo-only options (where option text is empty)
-							const optionText = initialData.options[idx];
-							corrected = optionText.trim() === "" ? String(idx) : optionText;
+							corrected = String(idx);
 						}
 					} else {
-						// Try to match against option text
-						const tokenLower = normalizeToken(rawCA).toLowerCase();
+						// Try to find the index of this text option
+						const normalize = (s: string) =>
+							(s || "").toString().replace(/\s+/g, " ").trim();
+						const lowerOptions = (initialData.options || []).map((o: string) =>
+							normalize(o).toLowerCase()
+						);
+						const tokenLower = normalize(rawCA).toLowerCase();
 						const matchIdx = lowerOptions.indexOf(tokenLower);
 						if (matchIdx >= 0) {
-							corrected = initialData.options[matchIdx];
+							corrected = String(matchIdx);
 						} else {
-							// Last attempt: direct equality against option values
+							// Last attempt: direct indexOf
 							const directMatch = initialData.options.indexOf(
 								initialData.correctAnswer
 							);
-							if (directMatch >= 0)
-								corrected = initialData.options[directMatch];
+							if (directMatch >= 0) {
+								corrected = String(directMatch);
+							}
 						}
 					}
 				}
 			}
 
 			setFormData({
-				id: (initialData as any).id, // Include ID for existing questions
+				id: (initialData as any).id,
 				questionText: initialData.questionText,
 				type: initialData.type,
 				points: initialData.points,
@@ -154,7 +149,6 @@ export default function QuestionModal({
 				imageFile: (initialData as any).imageFile || null,
 				imageUrl: initialData.imageUrl || "",
 				allowPhotoAnswer,
-				// Preserve existing optionImages from DB (for editing)
 				optionImages: (initialData as any).optionImages || undefined,
 			});
 
@@ -272,55 +266,100 @@ export default function QuestionModal({
 				toast.error("Minimal 2 pilihan harus diisi");
 				return;
 			}
+		}
 
-			console.log(
-				"🔍 handleSubmit validation - correctAnswer:",
-				formData.correctAnswer,
-				"trim:",
-				formData.correctAnswer.trim(),
-				"isEmpty:",
-				!formData.correctAnswer.trim()
-			);
-
-			if (!formData.correctAnswer.trim()) {
-				if (formData.type === "mixed_multiple_choice") {
-					console.log("❌ MMC validation failed: no correct answers selected");
-					toast.error("Pilih minimal 1 jawaban yang benar untuk soal majemuk");
-				} else {
-					console.log(
-						"❌ Multiple choice validation failed: no correct answer selected"
-					);
-					toast.error("Pilih jawaban yang benar");
-				}
-				return;
+		// Validate that trailing options have either text OR image (not completely empty)
+		for (let i = formData.options.length - 1; i >= 0; i--) {
+			const opt = formData.options[i];
+			const img = optionImagePreviews[i];
+			// Only reject if: no text AND no image (completely empty)
+			if (opt.trim() === "" && !img) {
+				// This is okay, just a blank option
+				continue;
 			}
+			// If we find an option with content (text or image), stop checking trailing options
+			if (opt.trim() !== "" || img) {
+				break;
+			}
+		}
 
-			// For mixed_multiple_choice, validate that at least one answer is selected
+		console.log(
+			"🔍 handleSubmit validation - correctAnswer:",
+			formData.correctAnswer,
+			"trim:",
+			formData.correctAnswer.trim(),
+			"isEmpty:",
+			!formData.correctAnswer.trim()
+		);
+
+		if (!formData.correctAnswer.trim()) {
 			if (formData.type === "mixed_multiple_choice") {
-				const selected = (formData.correctAnswer || "")
-					.split(",")
-					.map((x) => Number(x.trim()))
-					.filter((n) => !Number.isNaN(n));
+				console.log("❌ MMC validation failed: no correct answers selected");
+				toast.error("Pilih minimal 1 jawaban yang benar untuk soal majemuk");
+			} else {
 				console.log(
-					"🔍 MMC correctAnswer parsed:",
-					formData.correctAnswer,
-					"selected indices:",
-					selected
+					"❌ Multiple choice validation failed: no correct answer selected"
 				);
-				if (selected.length === 0) {
-					console.log("❌ MMC validation failed: selected.length === 0");
-					toast.error("Pilih minimal 1 jawaban yang benar untuk soal majemuk");
-					return;
-				}
+				toast.error("Pilih jawaban yang benar");
+			}
+			return;
+		}
+
+		// For mixed_multiple_choice, validate that at least one answer is selected
+		if (formData.type === "mixed_multiple_choice") {
+			const selected = (formData.correctAnswer || "")
+				.split(",")
+				.map((x) => Number(x.trim()))
+				.filter((n) => !Number.isNaN(n));
+			console.log(
+				"🔍 MMC correctAnswer parsed:",
+				formData.correctAnswer,
+				"selected indices:",
+				selected
+			);
+			if (selected.length === 0) {
+				console.log("❌ MMC validation failed: selected.length === 0");
+				toast.error("Pilih minimal 1 jawaban yang benar untuk soal majemuk");
+				return;
 			}
 		}
 
 		setSaving(true);
 		try {
+			// Filter options to remove trailing empty ones
+			let filteredOptions = formData.options || [];
+
+			// Remove trailing completely empty options (no text AND no image)
+			// Keep photo-only options (image without text)
+			while (filteredOptions.length > 0) {
+				const lastIdx = filteredOptions.length - 1;
+				const lastOption = filteredOptions[lastIdx];
+				const lastImage = optionImagePreviews[lastIdx];
+
+				// Keep if has text OR has image
+				if (lastOption.trim() !== "" || lastImage) {
+					break;
+				}
+				// Remove only if: empty text AND no image
+				console.log(`🗑️ Trimming trailing empty option at index ${lastIdx}`);
+				filteredOptions = filteredOptions.slice(0, -1);
+				optionImagePreviews.pop();
+				optionImages.pop();
+			}
+
+			// Adjust correctAnswer if it points to removed options
+			const correctAnswerNum = parseInt(formData.correctAnswer, 10);
+			if (correctAnswerNum >= filteredOptions.length) {
+				console.warn(
+					`⚠️ correctAnswer ${formData.correctAnswer} is out of bounds after trim, resetting`
+				);
+				formData.correctAnswer = ""; // Reset invalid answer
+			}
+
 			// Prepare output object with canonical correctAnswer format
 			const out: any = {
 				...formData,
-				options: formData.options || [],
+				options: filteredOptions, // Use filtered options
 				optionImageFiles: optionImages, // Include option image files for upload
 				optionImagePreviews: optionImagePreviews, // Include previews for local display
 				// Include existing optionImages from DB if they exist (for edit mode)
@@ -739,7 +778,10 @@ export default function QuestionModal({
 													/>
 													{/* Option Image Upload */}
 													{optionImagePreviews[idx] ? (
-														<div className="flex items-center gap-1">
+														<div
+															className="flex items-center gap-1"
+															onClick={(e) => e.stopPropagation()}
+														>
 															<img
 																src={optionImagePreviews[idx]}
 																alt={`Option ${String.fromCharCode(65 + idx)}`}
@@ -761,8 +803,11 @@ export default function QuestionModal({
 															</button>
 														</div>
 													) : (
-														<label className="text-blue-600 hover:text-blue-800 text-sm cursor-pointer">
-															📷
+														<label
+															className="flex items-center gap-1 px-3 py-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded cursor-pointer transition text-sm font-medium text-gray-700"
+															onClick={(e) => e.stopPropagation()}
+														>
+															📷 Gambar
 															<input
 																type="file"
 																accept="image/*"
@@ -829,18 +874,17 @@ export default function QuestionModal({
 									</div>
 									<div className="space-y-2">
 										{formData.options.map((option, idx) => {
-											// Handle both text-based and index-based answer selection
-											// If option is empty (only photo), use index comparison
-											// Otherwise, use text comparison
+											// Always use index for consistency
+											// This avoids confusion with empty options vs text that matches numbers
 											let isCorrect = false;
-											if (option.trim() === "") {
-												// Empty option - use index-based matching
-												isCorrect = formData.correctAnswer === String(idx);
-											} else {
-												// Non-empty option - use text-based matching
-												isCorrect =
-													formData.correctAnswer === option &&
-													formData.correctAnswer.trim() !== "";
+											try {
+												const selectedIdx = parseInt(
+													formData.correctAnswer,
+													10
+												);
+												isCorrect = !isNaN(selectedIdx) && selectedIdx === idx;
+											} catch (e) {
+												isCorrect = false;
 											}
 
 											return (
@@ -859,9 +903,8 @@ export default function QuestionModal({
 														onChange={() =>
 															setFormData({
 																...formData,
-																// Store index for empty options, text for non-empty
-																correctAnswer:
-																	option.trim() === "" ? String(idx) : option,
+																// Always store index for consistency
+																correctAnswer: String(idx),
 															})
 														}
 														className="w-4 h-4"
@@ -897,7 +940,10 @@ export default function QuestionModal({
 
 													{/* Option Image Upload */}
 													{optionImagePreviews[idx] ? (
-														<div className="flex items-center gap-1">
+														<div
+															className="flex items-center gap-1"
+															onClick={(e) => e.stopPropagation()}
+														>
 															<img
 																src={optionImagePreviews[idx]}
 																alt={`Option ${String.fromCharCode(65 + idx)}`}
@@ -919,8 +965,11 @@ export default function QuestionModal({
 															</button>
 														</div>
 													) : (
-														<label className="text-blue-600 hover:text-blue-800 text-sm cursor-pointer">
-															📷
+														<label
+															className="flex items-center gap-1 px-3 py-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded cursor-pointer transition text-sm font-medium text-gray-700"
+															onClick={(e) => e.stopPropagation()}
+														>
+															📷 Gambar
 															<input
 																type="file"
 																accept="image/*"

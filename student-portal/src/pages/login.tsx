@@ -141,12 +141,6 @@ export default function LoginPage() {
 						{isLoading ? "Memproses..." : "Masuk"}
 					</button>
 				</form>
-
-				<div className="mt-6 p-4 bg-gray-50 rounded-lg text-sm text-center">
-					<p className="font-semibold text-gray-700">Demo Login:</p>
-					<p className="text-gray-600">NIS: 12345</p>
-					<p className="text-gray-600">Password: siswa123</p>
-				</div>
 			</div>
 		</div>
 	);

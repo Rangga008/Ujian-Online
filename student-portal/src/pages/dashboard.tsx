@@ -27,14 +27,17 @@ interface Submission {
 }
 
 export default function DashboardPage() {
-	const { isAuthenticated } = useAuthGuard();
+	const { isAuthenticated, isChecking } = useAuthGuard();
 	const [activeExams, setActiveExams] = useState<ActiveExam[]>([]);
 	const [mySubmissions, setMySubmissions] = useState<Submission[]>([]);
 	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
-		fetchData();
-	}, []);
+		// Only fetch data if authenticated and auth checking is done
+		if (isAuthenticated && !isChecking) {
+			fetchData();
+		}
+	}, [isAuthenticated, isChecking]);
 
 	const fetchData = async () => {
 		try {
@@ -72,7 +75,8 @@ export default function DashboardPage() {
 		return `${startDate} - ${endDate}`;
 	};
 
-	if (loading) {
+	// Show loading while checking auth
+	if (isChecking || loading) {
 		return (
 			<Layout>
 				<div className="min-h-[70vh] flex items-center justify-center">

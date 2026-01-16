@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import api from "@/lib/api";
 import subjectsApi from "@/lib/subjectsApi";
 import toast from "react-hot-toast";
@@ -82,6 +83,10 @@ export default function ClassDetailPage() {
 	const [selectedSubjectIds, setSelectedSubjectIds] = useState<number[]>([]);
 	const [searchAvailable, setSearchAvailable] = useState("");
 	const [searchEnrolled, setSearchEnrolled] = useState("");
+	const [removeStudentModal, setRemoveStudentModal] = useState<{
+		isOpen: boolean;
+		studentId: number | null;
+	}>({ isOpen: false, studentId: null });
 
 	useEffect(() => {
 		if (!id) return;
@@ -161,14 +166,20 @@ export default function ClassDetailPage() {
 	};
 
 	const handleRemoveStudent = async (studentId: number) => {
-		if (!confirm("Yakin ingin mengeluarkan siswa dari kelas ini?")) return;
+		setRemoveStudentModal({ isOpen: true, studentId });
+	};
 
+	const executeRemoveStudent = async () => {
+		if (!removeStudentModal.studentId) return;
 		try {
-			// Set classId to null
-			await api.patch(`/students/${studentId}/assign-class`, {
-				classId: null,
-			});
+			await api.patch(
+				`/students/${removeStudentModal.studentId}/assign-class`,
+				{
+					classId: null,
+				}
+			);
 			toast.success("Siswa berhasil dikeluarkan dari kelas");
+			setRemoveStudentModal({ isOpen: false, studentId: null });
 			await fetchAll();
 		} catch (error: any) {
 			toast.error(
@@ -703,6 +714,18 @@ export default function ClassDetailPage() {
 					</div>
 				)}
 			</div>
+			<ConfirmationModal
+				isOpen={removeStudentModal.isOpen}
+				title="Keluarkan Siswa dari Kelas"
+				message="Yakin ingin mengeluarkan siswa dari kelas ini?"
+				confirmText="Keluarkan"
+				cancelText="Batal"
+				isDangerous={true}
+				onConfirm={executeRemoveStudent}
+				onCancel={() =>
+					setRemoveStudentModal({ isOpen: false, studentId: null })
+				}
+			/>
 		</Layout>
 	);
 }

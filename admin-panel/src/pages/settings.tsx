@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Head from "next/head";
 import Layout from "@/components/Layout";
 import { useRouter } from "next/router";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import { useAuthStore } from "@/store/authStore";
 import { isPageAccessible } from "@/lib/authGuard";
 import settingsApi, { Setting } from "@/lib/settingsApi";
@@ -50,6 +51,15 @@ export default function SettingsPage() {
 	});
 	const [loadingGrades, setLoadingGrades] = useState(false);
 	const [savingGrade, setSavingGrade] = useState(false);
+	const [deleteModal, setDeleteModal] = useState<{
+		isOpen: boolean;
+		id: number | null;
+		type: "subject" | "grade";
+	}>({
+		isOpen: false,
+		id: null,
+		type: "subject",
+	});
 
 	useEffect(() => {
 		fetchSettings();
@@ -320,18 +330,24 @@ export default function SettingsPage() {
 		}
 	};
 
-	const handleDeleteSubject = async (id: number) => {
-		if (!confirm("Yakin ingin menghapus mata pelajaran ini?")) return;
+	const handleDeleteSubjectConfirm = async () => {
+		if (!deleteModal.id || deleteModal.type !== "subject") return;
 
 		try {
-			await subjectsApi.delete(id);
+			await subjectsApi.delete(deleteModal.id);
 			toast.success("Mata pelajaran berhasil dihapus!");
+			setDeleteModal({ isOpen: false, id: null, type: "subject" });
 			fetchSubjects();
 		} catch (error: any) {
 			toast.error(
 				error.response?.data?.message || "Gagal menghapus mata pelajaran"
 			);
+			setDeleteModal({ isOpen: false, id: null, type: "subject" });
 		}
+	};
+
+	const handleDeleteSubject = (id: number) => {
+		setDeleteModal({ isOpen: true, id, type: "subject" });
 	};
 
 	const handleToggleSubjectActive = async (id: number, isActive: boolean) => {
@@ -403,16 +419,22 @@ export default function SettingsPage() {
 		}
 	};
 
-	const handleDeleteGrade = async (id: number) => {
-		if (!confirm("Yakin ingin menghapus angkatan ini?")) return;
+	const handleDeleteGradeConfirm = async () => {
+		if (!deleteModal.id || deleteModal.type !== "grade") return;
 
 		try {
-			await gradesApi.delete(id);
+			await gradesApi.delete(deleteModal.id);
 			toast.success("Angkatan berhasil dihapus!");
+			setDeleteModal({ isOpen: false, id: null, type: "grade" });
 			fetchGrades();
 		} catch (error: any) {
 			toast.error(error.response?.data?.message || "Gagal menghapus angkatan");
+			setDeleteModal({ isOpen: false, id: null, type: "grade" });
 		}
+	};
+
+	const handleDeleteGrade = (id: number) => {
+		setDeleteModal({ isOpen: true, id, type: "grade" });
 	};
 
 	const handleToggleGradeActive = async (id: number, isActive: boolean) => {
@@ -1167,6 +1189,32 @@ export default function SettingsPage() {
 					</div>
 				</div>
 			)}
+
+			<ConfirmationModal
+				isOpen={deleteModal.isOpen && deleteModal.type === "subject"}
+				title="Hapus Mata Pelajaran"
+				message="Yakin ingin menghapus mata pelajaran ini? Tindakan ini tidak dapat dibatalkan."
+				confirmText="Hapus"
+				cancelText="Batal"
+				isDangerous={true}
+				onConfirm={handleDeleteSubjectConfirm}
+				onCancel={() =>
+					setDeleteModal({ isOpen: false, id: null, type: "subject" })
+				}
+			/>
+
+			<ConfirmationModal
+				isOpen={deleteModal.isOpen && deleteModal.type === "grade"}
+				title="Hapus Angkatan"
+				message="Yakin ingin menghapus angkatan ini? Tindakan ini tidak dapat dibatalkan."
+				confirmText="Hapus"
+				cancelText="Batal"
+				isDangerous={true}
+				onConfirm={handleDeleteGradeConfirm}
+				onCancel={() =>
+					setDeleteModal({ isOpen: false, id: null, type: "grade" })
+				}
+			/>
 		</Layout>
 	);
 }

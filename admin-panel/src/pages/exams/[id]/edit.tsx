@@ -147,12 +147,30 @@ export default function ExamEditPage() {
 				}
 			}
 
+			// Helper to convert UTC ISO string to local datetime format for form
+			const utcToLocalFormFormat = (isoString?: string): string => {
+				if (!isoString) return "";
+				try {
+					// Parse ISO string (e.g., "2026-01-16T04:10:00.000Z")
+					const utcDate = new Date(isoString);
+					// Convert to local time
+					const year = utcDate.getFullYear();
+					const month = String(utcDate.getMonth() + 1).padStart(2, "0");
+					const day = String(utcDate.getDate()).padStart(2, "0");
+					const hours = String(utcDate.getHours()).padStart(2, "0");
+					const minutes = String(utcDate.getMinutes()).padStart(2, "0");
+					return `${year}-${month}-${day}T${hours}:${minutes}`;
+				} catch (e) {
+					return "";
+				}
+			};
+
 			setFormData({
 				title: examData.title,
 				description: examData.description,
 				duration: examData.duration,
-				startTime: examData.startTime?.slice(0, 16) || "",
-				endTime: examData.endTime?.slice(0, 16) || "",
+				startTime: utcToLocalFormFormat(examData.startTime),
+				endTime: utcToLocalFormFormat(examData.endTime),
 				classId: examData.classId?.toString() || "",
 				subjectId: examData.subjectId?.toString() || "",
 				semesterId: examData.semesterId?.toString() || "",
@@ -302,6 +320,11 @@ export default function ExamEditPage() {
 			return;
 		}
 
+		// Prevent double submission
+		if (saving) {
+			return;
+		}
+
 		const success = await submitExam(`/exams/${id}`);
 		if (success) {
 			toast.success("Ujian berhasil diperbarui");
@@ -320,22 +343,30 @@ export default function ExamEditPage() {
 			if (q.type === "multiple_choice") {
 				const ca = String(q.correctAnswer ?? "").trim();
 				if (ca) {
-					// Prefer matching option text first (handles numeric option texts like "4")
-					let idx = out.options.indexOf(ca);
-					if (idx < 0) {
-						const lower = ca.toLowerCase();
-						idx = out.options.findIndex(
-							(o: string) => (o || "").toLowerCase() === lower
-						);
-					}
-					if (idx >= 0) {
-						out.correctAnswer = String(idx);
-					} else if (/^\d+$/.test(ca)) {
+					// IMPORTANT: Check if it's already a numeric index FIRST
+					// before trying text matching, to avoid confusing
+					// numeric option text (like "4") with indices
+					if (/^\d+$/.test(ca)) {
 						const num = Number(ca);
-						out.correctAnswer =
-							num >= 0 && num < out.options.length ? String(num) : "";
+						if (num >= 0 && num < out.options.length) {
+							out.correctAnswer = String(num);
+						} else {
+							out.correctAnswer = "";
+						}
 					} else {
-						out.correctAnswer = "";
+						// Not numeric, try matching option text
+						let idx = out.options.indexOf(ca);
+						if (idx < 0) {
+							const lower = ca.toLowerCase();
+							idx = out.options.findIndex(
+								(o: string) => (o || "").toLowerCase() === lower
+							);
+						}
+						if (idx >= 0) {
+							out.correctAnswer = String(idx);
+						} else {
+							out.correctAnswer = "";
+						}
 					}
 				} else {
 					out.correctAnswer = "";

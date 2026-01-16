@@ -66,7 +66,7 @@ export default function QuestionList({
 			<h2 className="text-xl font-bold mb-4">Daftar Soal</h2>
 			<div className="space-y-4">
 				{questions.map((question, idx) => (
-					<div key={idx} className="border rounded-lg p-4">
+					<div key={question.id || `new-${idx}`} className="border rounded-lg p-4">
 						<div className="flex justify-between items-start mb-2">
 							<div className="flex-1">
 								<p className="font-medium">

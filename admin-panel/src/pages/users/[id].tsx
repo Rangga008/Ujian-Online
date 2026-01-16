@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import Head from "next/head";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import api from "@/lib/api";
 import toast from "react-hot-toast";
 import classesApi, { Class } from "@/lib/classesApi";
@@ -43,6 +44,10 @@ export default function UserDetailPage() {
 	const [selectedClassId, setSelectedClassId] = useState<string>("");
 	const [showEditUserModal, setShowEditUserModal] = useState(false);
 	const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+	const [removeStudentModal, setRemoveStudentModal] = useState<{
+		isOpen: boolean;
+		studentId: number | null;
+	}>({ isOpen: false, studentId: null });
 	const [editFormData, setEditFormData] = useState({
 		name: "",
 		email: "",
@@ -140,16 +145,15 @@ export default function UserDetailPage() {
 	};
 
 	const handleRemoveFromSemester = async (studentId: number) => {
-		if (
-			!confirm(
-				"Yakin ingin menghapus siswa dari semester ini? Data ujian dan nilai akan ikut terhapus."
-			)
-		)
-			return;
+		setRemoveStudentModal({ isOpen: true, studentId });
+	};
 
+	const executeRemoveStudent = async () => {
+		if (!removeStudentModal.studentId) return;
 		try {
-			await api.delete(`/students/${studentId}`);
+			await api.delete(`/students/${removeStudentModal.studentId}`);
 			toast.success("Siswa berhasil dihapus dari semester");
+			setRemoveStudentModal({ isOpen: false, studentId: null });
 			await fetchAll();
 		} catch (error: any) {
 			toast.error(error.response?.data?.message || "Gagal menghapus siswa");
@@ -980,6 +984,18 @@ export default function UserDetailPage() {
 					</div>
 				</div>
 			</div>
+			<ConfirmationModal
+				isOpen={removeStudentModal.isOpen}
+				title="Hapus Siswa dari Semester"
+				message="Yakin ingin menghapus siswa dari semester ini? Data ujian dan nilai akan ikut terhapus."
+				confirmText="Hapus"
+				cancelText="Batal"
+				isDangerous={true}
+				onConfirm={executeRemoveStudent}
+				onCancel={() =>
+					setRemoveStudentModal({ isOpen: false, studentId: null })
+				}
+			/>
 		</Layout>
 	);
 }

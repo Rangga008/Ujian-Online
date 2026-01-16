@@ -3,6 +3,7 @@ import Head from "next/head";
 import Link from "next/link";
 import Layout from "@/components/Layout";
 import { useRouter } from "next/router";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import { useAuthStore } from "@/store/authStore";
 import { isPageAccessible } from "@/lib/authGuard";
 import api from "@/lib/api";
@@ -36,6 +37,15 @@ export default function TeachersPage() {
 		null
 	);
 	const [selectedClassIds, setSelectedClassIds] = useState<number[]>([]);
+	const [deleteModal, setDeleteModal] = useState<{
+		isOpen: boolean;
+		id: number | null;
+		type: string;
+	}>({
+		isOpen: false,
+		id: null,
+		type: "",
+	});
 
 	const [formData, setFormData] = useState({
 		name: "",
@@ -129,16 +139,22 @@ export default function TeachersPage() {
 		}
 	};
 
-	const handleDelete = async (id: number) => {
-		if (!confirm("Yakin ingin menghapus guru ini?")) return;
+	const handleDeleteConfirm = async () => {
+		if (!deleteModal.id) return;
 
 		try {
-			await teachersApi.delete(id);
+			await teachersApi.delete(deleteModal.id);
 			toast.success("Guru berhasil dihapus");
+			setDeleteModal({ isOpen: false, id: null, type: "" });
 			fetchTeachers();
 		} catch (error: any) {
 			toast.error(error.response?.data?.message || "Gagal menghapus guru");
+			setDeleteModal({ isOpen: false, id: null, type: "" });
 		}
+	};
+
+	const handleDelete = (id: number) => {
+		setDeleteModal({ isOpen: true, id, type: "teacher" });
 	};
 
 	const handleOpenAssignModal = (teacher: Teacher) => {
@@ -467,6 +483,17 @@ export default function TeachersPage() {
 					</div>
 				)}
 			</div>
+
+			<ConfirmationModal
+				isOpen={deleteModal.isOpen}
+				title="Hapus Guru"
+				message="Yakin ingin menghapus guru ini? Tindakan ini tidak dapat dibatalkan."
+				confirmText="Hapus"
+				cancelText="Batal"
+				isDangerous={true}
+				onConfirm={handleDeleteConfirm}
+				onCancel={() => setDeleteModal({ isOpen: false, id: null, type: "" })}
+			/>
 		</Layout>
 	);
 }

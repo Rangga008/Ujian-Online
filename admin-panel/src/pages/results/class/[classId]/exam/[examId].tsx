@@ -29,6 +29,33 @@ export default function ClassExamResultsPage() {
 	const [loadingSubmissionDetail, setLoadingSubmissionDetail] = useState(false);
 	const [exporting, setExporting] = useState(false);
 
+	// New states for search and grading filter
+	const [searchQuery, setSearchQuery] = useState("");
+	const [gradingFilter, setGradingFilter] = useState<
+		"all" | "graded" | "pending"
+	>("all");
+	const [gradedSubmissions, setGradedSubmissions] = useState<Set<number>>(
+		new Set()
+	);
+	const [lastExamVersionId, setLastExamVersionId] = useState<number | null>(
+		null
+	);
+
+	// Function to reload submissions
+	const reloadSubmissions = async () => {
+		if (!examId) return;
+		try {
+			const submissionsResp = await api.get(`/submissions/exam/${examId}`);
+			const allSubmissions = submissionsResp.data || [];
+			const filtered = allSubmissions.filter((s: any) => {
+				return String(s.student?.classId) === String(classId);
+			});
+			setSubmissions(filtered.length > 0 ? filtered : allSubmissions);
+		} catch (err) {
+			console.error("Error reloading submissions:", err);
+		}
+	};
+
 	useEffect(() => {
 		if (!classId || !examId) return;
 		const load = async () => {
@@ -39,11 +66,37 @@ export default function ClassExamResultsPage() {
 					api.get(`/submissions/exam/${examId}`),
 				]);
 				setExam(examResp.data);
+				setLastExamVersionId(examResp.data.id); // Track exam version
 				const allSubmissions = submissionsResp.data || [];
-				const filtered = allSubmissions.filter(
-					(s: any) => String(s.student?.classId) === String(classId)
+				console.log("DEBUG - All submissions from API:", allSubmissions);
+				console.log("DEBUG - Current classId:", classId);
+				console.log("DEBUG - Submission structure:", allSubmissions[0]);
+
+				const filtered = allSubmissions.filter((s: any) => {
+					const submissionClassId = s.student?.classId;
+					console.log(
+						`DEBUG - Submission ${
+							s.id
+						}: student.classId=${submissionClassId}, matches=${
+							String(submissionClassId) === String(classId)
+						}`
+					);
+					return String(submissionClassId) === String(classId);
+				});
+
+				console.log(
+					`DEBUG - Filtered submissions: ${filtered.length} out of ${allSubmissions.length}`
 				);
-				setSubmissions(filtered);
+
+				// Fallback: if no submissions filtered, show all (might be a filtering issue)
+				if (filtered.length === 0 && allSubmissions.length > 0) {
+					console.warn(
+						"WARNING - No submissions matched the class filter. Showing all submissions instead."
+					);
+					setSubmissions(allSubmissions);
+				} else {
+					setSubmissions(filtered);
+				}
 
 				if (examResp.data.class) {
 					setClassData(examResp.data.class);
@@ -57,6 +110,27 @@ export default function ClassExamResultsPage() {
 		};
 		load();
 	}, [classId, examId]);
+
+	// Auto-reload submissions every 5 seconds to detect exam updates
+	useEffect(() => {
+		if (!examId || !classId) return;
+
+		const interval = setInterval(async () => {
+			try {
+				const examResp = await api.get(`/exams/${examId}`);
+				// Check if exam was updated (e.g., questions changed)
+				if (lastExamVersionId !== null && examResp.data.updatedAt) {
+					// Reload submissions if exam was modified
+					await reloadSubmissions();
+					console.log("✓ Submissions reloaded after exam update");
+				}
+			} catch (err) {
+				console.error("Error polling exam updates:", err);
+			}
+		}, 5000); // Poll every 5 seconds
+
+		return () => clearInterval(interval);
+	}, [examId, classId, lastExamVersionId]);
 
 	const totalQuestions = selectedSubmission?.answers?.length || 0;
 	const currentQuestion =
@@ -75,6 +149,7 @@ export default function ClassExamResultsPage() {
 			});
 			setAnswersState(answerMap);
 			setCurrentQuestionIndex(0);
+			console.log("DEBUG - Loaded submission answers:", resp.data.answers);
 		} catch (err) {
 			console.error(err);
 			toast.error("Gagal memuat submission");
@@ -86,6 +161,50 @@ export default function ClassExamResultsPage() {
 	const handleSelectSubmission = (submissionId: number) => {
 		setSelectedSubmissionId(submissionId);
 		loadSubmissionAnswers(submissionId);
+	};
+
+	// Helper function to resolve answer to display text/image
+	const resolveAnswerDisplay = (answer: any) => {
+		const question = answer.question;
+		const rawAnswer = answer.answer;
+
+		if (!question) return rawAnswer || "-";
+
+		// For multiple choice with numeric index
+		if (
+			(question.type === "multiple_choice" ||
+				question.type === "mixed_multiple_choice") &&
+			/^\d+$/.test(rawAnswer)
+		) {
+			const idx = Number(rawAnswer);
+			// If option images exist, return the image URL
+			if (question.optionImages && question.optionImages[idx]) {
+				return { type: "image", url: question.optionImages[idx] };
+			}
+			// Otherwise return option text
+			const options = question.options || [];
+			return { type: "text", value: options[idx] || rawAnswer || "-" };
+		}
+
+		// For mixed multiple choice with comma-separated indices
+		if (
+			question.type === "mixed_multiple_choice" &&
+			/^[\d,\s]+$/.test(rawAnswer)
+		) {
+			const indices = rawAnswer.split(/[,\s]+/).map((s: string) => Number(s));
+			const selectedOptions = indices
+				.map((idx: number) => {
+					if (question.optionImages && question.optionImages[idx]) {
+						return { type: "image", url: question.optionImages[idx] };
+					}
+					const options = question.options || [];
+					return { type: "text", value: options[idx] };
+				})
+				.filter((opt: any) => opt.value !== undefined || opt.url !== undefined);
+			return { type: "mixed", items: selectedOptions };
+		}
+
+		return { type: "text", value: rawAnswer || "-" };
 	};
 
 	const handleDeleteSubmission = async () => {
@@ -102,6 +221,40 @@ export default function ClassExamResultsPage() {
 			toast.error("Gagal menghapus submission");
 		}
 	};
+
+	const handleToggleGraded = (submissionId: number) => {
+		setGradedSubmissions((prev) => {
+			const newSet = new Set(prev);
+			if (newSet.has(submissionId)) {
+				newSet.delete(submissionId);
+			} else {
+				newSet.add(submissionId);
+			}
+			return newSet;
+		});
+	};
+
+	// Filter submissions based on search and grading status
+	const filteredSubmissions = submissions.filter((s) => {
+		// Search filter by name or NIS
+		const matchesSearch =
+			searchQuery === "" ||
+			(s.student?.name || "")
+				.toLowerCase()
+				.includes(searchQuery.toLowerCase()) ||
+			(s.student?.user?.nis || "").includes(searchQuery);
+
+		// Grading status filter
+		const isGraded = gradedSubmissions.has(s.id);
+		let matchesGradingFilter = true;
+		if (gradingFilter === "graded") {
+			matchesGradingFilter = isGraded;
+		} else if (gradingFilter === "pending") {
+			matchesGradingFilter = !isGraded;
+		}
+
+		return matchesSearch && matchesGradingFilter;
+	});
 
 	const handleNextQuestion = () => {
 		if (hasNextQuestion) {
@@ -120,6 +273,66 @@ export default function ClassExamResultsPage() {
 			...prev,
 			[answerId]: value,
 		}));
+	};
+
+	const handleToggleCorrect = async (
+		answerId: number,
+		currentStatus: boolean
+	) => {
+		if (!selectedSubmission) return;
+		setSaving(true);
+		try {
+			// Toggle the correct status by calling a new endpoint
+			await api.patch(
+				`/submissions/${selectedSubmission.id}/answer/${answerId}`,
+				{
+					isCorrect: !currentStatus,
+				}
+			);
+
+			// Reload submission to reflect changes
+			await loadSubmissionAnswers(selectedSubmission.id);
+			toast.success(
+				`Jawaban ditandai sebagai ${!currentStatus ? "benar" : "salah"}`
+			);
+		} catch (err) {
+			console.error(err);
+			toast.error("Gagal mengubah status jawaban");
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const handleSaveCurrentQuestion = async () => {
+		if (!selectedSubmission || !examId || !currentQuestion) return;
+		setSaving(true);
+		try {
+			// Only save if it's an essay question
+			if (currentQuestion.question?.type !== "essay") {
+				toast.error("Hanya soal essay yang bisa dinilai");
+				setSaving(false);
+				return;
+			}
+
+			const pointValue = answersState[currentQuestion.id] ?? 0;
+			await api.post(`/submissions/${selectedSubmission.id}/grade`, {
+				answers: [
+					{
+						id: currentQuestion.id,
+						points: pointValue,
+					},
+				],
+			});
+
+			// Reload submission to reflect changes
+			await loadSubmissionAnswers(selectedSubmission.id);
+			toast.success("Nilai soal disimpan");
+		} catch (err) {
+			console.error(err);
+			toast.error("Gagal menyimpan nilai");
+		} finally {
+			setSaving(false);
+		}
 	};
 
 	const handleSave = async () => {
@@ -145,7 +358,7 @@ export default function ClassExamResultsPage() {
 
 			// Reload submission to reflect changes
 			await loadSubmissionAnswers(selectedSubmission.id);
-			toast.success("Nilai disimpan");
+			toast.success("Semua nilai disimpan");
 		} catch (err) {
 			console.error(err);
 			toast.error("Gagal menyimpan nilai");
@@ -276,6 +489,13 @@ export default function ClassExamResultsPage() {
 					</div>
 					<div className="flex items-center space-x-2">
 						<button
+							onClick={() => reloadSubmissions()}
+							className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-medium"
+							title="Muat ulang submission"
+						>
+							🔄 Muat Ulang
+						</button>
+						<button
 							onClick={() => handleExportXLSX()}
 							disabled={exporting || submissions.length === 0}
 							className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
@@ -296,47 +516,126 @@ export default function ClassExamResultsPage() {
 							<h2 className="text-lg font-bold mb-4">
 								Daftar Siswa{" "}
 								<span className="text-gray-600 font-normal text-sm">
-									({submissions.length})
+									({filteredSubmissions.length})
 								</span>
 							</h2>
 
-							{submissions.length === 0 ? (
+							{/* Search Box */}
+							<div className="mb-4">
+								<input
+									type="text"
+									placeholder="Cari nama atau NIS..."
+									value={searchQuery}
+									onChange={(e) => setSearchQuery(e.target.value)}
+									className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+								/>
+							</div>
+
+							{/* Filter Buttons */}
+							<div className="mb-4 flex gap-2">
+								<button
+									onClick={() => setGradingFilter("all")}
+									className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${
+										gradingFilter === "all"
+											? "bg-blue-500 text-white"
+											: "bg-gray-200 text-gray-700 hover:bg-gray-300"
+									}`}
+								>
+									Semua ({submissions.length})
+								</button>
+								<button
+									onClick={() => setGradingFilter("pending")}
+									className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${
+										gradingFilter === "pending"
+											? "bg-yellow-500 text-white"
+											: "bg-gray-200 text-gray-700 hover:bg-gray-300"
+									}`}
+								>
+									Pending (
+									{
+										submissions.filter((s) => !gradedSubmissions.has(s.id))
+											.length
+									}
+									)
+								</button>
+								<button
+									onClick={() => setGradingFilter("graded")}
+									className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${
+										gradingFilter === "graded"
+											? "bg-green-500 text-white"
+											: "bg-gray-200 text-gray-700 hover:bg-gray-300"
+									}`}
+								>
+									Selesai ({gradedSubmissions.size})
+								</button>
+							</div>
+
+							{filteredSubmissions.length === 0 ? (
 								<p className="text-gray-600 text-center py-8">
-									Belum ada siswa yang mengerjakan.
+									{submissions.length === 0
+										? "Belum ada siswa yang mengerjakan."
+										: "Tidak ada yang sesuai filter."}
 								</p>
 							) : (
-								<div className="space-y-2 max-h-[600px] overflow-y-auto">
-									{submissions.map((s) => (
-										<button
-											key={s.id}
-											onClick={() => handleSelectSubmission(s.id)}
-											className={`w-full text-left p-3 rounded-lg border-2 transition ${
-												selectedSubmissionId === s.id
-													? "border-blue-500 bg-blue-50"
-													: "border-gray-200 hover:border-gray-300"
-											}`}
-										>
-											<div className="font-medium text-sm">
-												{s.student?.name || "-"}
-											</div>
-											<div className="text-xs text-gray-600">
-												NIS: {s.student?.user?.nis || "-"}
-											</div>
-											<div className="flex items-center justify-between mt-2">
-												<span
-													className={`text-xs px-2 py-1 rounded ${
-														s.status === "submitted"
-															? "bg-green-100 text-green-700"
-															: "bg-blue-100 text-blue-700"
-													}`}
+								<div className="space-y-2 max-h-[550px] overflow-y-auto">
+									{filteredSubmissions.map((s) => (
+										<div key={s.id} className="flex items-start gap-2">
+											<button
+												onClick={() => handleSelectSubmission(s.id)}
+												className={`flex-1 text-left p-3 rounded-lg border-2 transition ${
+													selectedSubmissionId === s.id
+														? "border-blue-500 bg-blue-50"
+														: "border-gray-200 hover:border-gray-300"
+												}`}
+											>
+												<div className="font-medium text-sm">
+													{s.student?.name || "-"}
+												</div>
+												<div className="text-xs text-gray-600">
+													NIS: {s.student?.user?.nis || "-"}
+												</div>
+												<div className="flex items-center justify-between mt-2">
+													<span
+														className={`text-xs px-2 py-1 rounded ${
+															s.status === "submitted"
+																? "bg-green-100 text-green-700"
+																: "bg-blue-100 text-blue-700"
+														}`}
+													>
+														{s.status}
+													</span>
+													<span className="font-bold text-sm text-primary-600">
+														{s.score ?? "-"}
+													</span>
+												</div>
+											</button>
+											{/* Checkmark Button */}
+											<button
+												onClick={() => handleToggleGraded(s.id)}
+												className={`mt-3 px-3 py-3 rounded-lg border-2 transition flex items-center justify-center ${
+													gradedSubmissions.has(s.id)
+														? "bg-green-100 border-green-500 text-green-600"
+														: "bg-gray-100 border-gray-300 text-gray-400 hover:border-green-400"
+												}`}
+												title={
+													gradedSubmissions.has(s.id)
+														? "Sudah dinilai"
+														: "Tandai selesai"
+												}
+											>
+												<svg
+													className="w-5 h-5"
+													fill="currentColor"
+													viewBox="0 0 20 20"
 												>
-													{s.status}
-												</span>
-												<span className="font-bold text-sm text-primary-600">
-													{s.score ?? "-"}
-												</span>
-											</div>
-										</button>
+													<path
+														fillRule="evenodd"
+														d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+														clipRule="evenodd"
+													/>
+												</svg>
+											</button>
+										</div>
 									))}
 								</div>
 							)}
@@ -357,14 +656,32 @@ export default function ClassExamResultsPage() {
 							</div>
 						) : (
 							<div className="space-y-4">
-								{/* Header with Delete Button */}
+								{/* Header with Delete Button and Status */}
 								<div className="card">
-									<div className="flex items-start justify-between">
-										<div>
-											<h2 className="text-2xl font-bold">
-												{selectedSubmission.student?.name}
-											</h2>
-											<p className="text-gray-600 text-sm mt-1">
+									<div className="flex items-start justify-between gap-4">
+										<div className="flex-1">
+											<div className="flex items-center gap-3">
+												<h2 className="text-2xl font-bold">
+													{selectedSubmission.student?.name}
+												</h2>
+												{gradedSubmissions.has(selectedSubmissionId!) && (
+													<div className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+														<svg
+															className="w-4 h-4"
+															fill="currentColor"
+															viewBox="0 0 20 20"
+														>
+															<path
+																fillRule="evenodd"
+																d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																clipRule="evenodd"
+															/>
+														</svg>
+														Selesai
+													</div>
+												)}
+											</div>
+											<p className="text-gray-600 text-sm mt-2">
 												NIS: {selectedSubmission.student?.user?.nis}
 											</p>
 											<p className="text-gray-600 text-sm mt-1">
@@ -374,12 +691,39 @@ export default function ClassExamResultsPage() {
 												</span>
 											</p>
 										</div>
-										<button
-											onClick={handleDeleteSubmission}
-											className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium"
-										>
-											Hapus
-										</button>
+										<div className="flex flex-col gap-2">
+											<button
+												onClick={() =>
+													handleToggleGraded(selectedSubmissionId!)
+												}
+												className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
+													gradedSubmissions.has(selectedSubmissionId!)
+														? "bg-green-100 text-green-700 hover:bg-green-200"
+														: "bg-blue-100 text-blue-700 hover:bg-blue-200"
+												}`}
+											>
+												<svg
+													className="w-4 h-4"
+													fill="currentColor"
+													viewBox="0 0 20 20"
+												>
+													<path
+														fillRule="evenodd"
+														d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+														clipRule="evenodd"
+													/>
+												</svg>
+												{gradedSubmissions.has(selectedSubmissionId!)
+													? "Tandai Belum Selesai"
+													: "Tandai Selesai"}
+											</button>
+											<button
+												onClick={handleDeleteSubmission}
+												className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium"
+											>
+												Hapus
+											</button>
+										</div>
 									</div>
 								</div>
 
@@ -467,10 +811,11 @@ export default function ClassExamResultsPage() {
 															Jawaban Siswa:
 														</label>
 														<div className="p-3 bg-gray-50 rounded border mb-4 min-h-[100px] whitespace-pre-wrap">
-															{currentQuestion.answer &&
-															currentQuestion.answer.startsWith("data:") ? (
+															{currentQuestion.answerImageUrl ? (
 																<img
-																	src={currentQuestion.answer}
+																	src={getImageUrl(
+																		currentQuestion.answerImageUrl
+																	)}
 																	alt="jawaban foto"
 																	className="max-w-full max-h-80 rounded"
 																/>
@@ -500,6 +845,13 @@ export default function ClassExamResultsPage() {
 																<span className="text-sm text-gray-600">
 																	Max: {currentQuestion.question?.points}
 																</span>
+																<button
+																	onClick={handleSaveCurrentQuestion}
+																	disabled={saving}
+																	className="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+																>
+																	{saving ? "Simpan..." : "Simpan"}
+																</button>
 															</div>
 														</div>
 													</div>
@@ -509,11 +861,12 @@ export default function ClassExamResultsPage() {
 															Jawaban Siswa:
 														</label>
 														<div className="p-3 bg-gray-50 rounded border mb-3">
-															{currentQuestion.answer &&
-															currentQuestion.answer.startsWith("data:") ? (
+															{currentQuestion.answerImageUrl ? (
 																<div>
 																	<img
-																		src={currentQuestion.answer}
+																		src={getImageUrl(
+																			currentQuestion.answerImageUrl
+																		)}
 																		alt="jawaban foto"
 																		className="max-w-full max-h-80 rounded mb-3"
 																	/>
@@ -524,66 +877,130 @@ export default function ClassExamResultsPage() {
 															) : (
 																<>
 																	<div className="font-medium mb-2">
-																		{currentQuestion.answer || "-"}
+																		{(() => {
+																			const display =
+																				resolveAnswerDisplay(currentQuestion);
+																			if (display.type === "image") {
+																				return (
+																					<img
+																						src={getImageUrl(display.url)}
+																						alt="pilihan foto"
+																						className="max-w-xs max-h-64 rounded"
+																					/>
+																				);
+																			} else if (display.type === "mixed") {
+																				return (
+																					<div className="space-y-2">
+																						{display.items.map(
+																							(item: any, idx: number) =>
+																								item.type === "image" ? (
+																									<div key={idx}>
+																										<img
+																											src={getImageUrl(
+																												item.url
+																											)}
+																											alt={`pilihan ${idx + 1}`}
+																											className="max-w-xs max-h-48 rounded"
+																										/>
+																									</div>
+																								) : (
+																									<div
+																										key={idx}
+																										className="px-2 py-1 bg-blue-100 rounded text-sm"
+																									>
+																										{item.value}
+																									</div>
+																								)
+																						)}
+																					</div>
+																				);
+																			}
+																			return display.value || "-";
+																		})()}
 																	</div>
 																	<div>
 																		<span
-																			className={`px-3 py-1 rounded-full text-sm font-medium ${
+																			className={`px-3 py-1 rounded-full text-sm font-medium cursor-pointer transition hover:opacity-80 ${
 																				currentQuestion.isCorrect
 																					? "bg-green-100 text-green-700"
 																					: "bg-red-100 text-red-700"
 																			}`}
+																			onClick={() =>
+																				handleToggleCorrect(
+																					currentQuestion.id,
+																					currentQuestion.isCorrect
+																				)
+																			}
+																			title="Klik untuk mengubah status"
 																		>
 																			{currentQuestion.isCorrect
 																				? "✓ Benar"
 																				: "✗ Salah"}
 																		</span>
+																		<p className="text-xs text-gray-500 mt-1">
+																			Klik untuk mengubah status
+																		</p>
 																	</div>
 																</>
 															)}
 														</div>
-														{!currentQuestion.answer?.startsWith("data:") && (
-															<div className="text-sm text-gray-600">
-																Jawaban Benar:{" "}
-																<span className="font-medium">
-																	{(() => {
-																		const ca =
-																			currentQuestion.question?.correctAnswer ??
-																			"";
-																		const opts =
-																			currentQuestion.question?.options || [];
-																		const norm = (s: any) =>
-																			(s || "").toString().trim();
-																		if (
-																			currentQuestion.question?.type ===
-																			"mixed_multiple_choice"
-																		) {
-																			let parts = ca
-																				.split(/[;,|\/\s]+/)
-																				.map((p: string) => p.trim())
-																				.filter(Boolean);
-																			const mapped = parts.map((p: string) => {
-																				if (/^\d+$/.test(p) && opts[Number(p)])
-																					return norm(opts[Number(p)]);
-																				if (/^[A-Za-z]$/.test(p)) {
-																					const i =
-																						p.toUpperCase().charCodeAt(0) - 65;
-																					if (opts[i]) return norm(opts[i]);
-																				}
-																				return p;
-																			});
-																			return mapped.join(", ");
-																		}
-																		if (/^\d+$/.test(ca) && opts[Number(ca)])
-																			return norm(opts[Number(ca)]);
-																		if (/^[A-Za-z]$/.test(ca)) {
-																			const i =
-																				ca.toUpperCase().charCodeAt(0) - 65;
-																			if (opts[i]) return norm(opts[i]);
-																		}
-																		return ca;
-																	})()}
-																</span>
+														{!currentQuestion.answerImageUrl && (
+															<div className="text-sm text-gray-600 mt-3 pt-3 border-t">
+																<label className="block font-medium mb-2">
+																	Jawaban Benar:
+																</label>
+																{(() => {
+																	const display = resolveAnswerDisplay({
+																		answer:
+																			currentQuestion.question?.correctAnswer,
+																		question: currentQuestion.question,
+																	});
+																	if (display.type === "image") {
+																		return (
+																			<div className="mb-2">
+																				<img
+																					src={getImageUrl(display.url)}
+																					alt="jawaban benar"
+																					className="max-w-xs max-h-48 rounded border border-green-200"
+																				/>
+																				<div className="text-xs text-green-600 mt-1">
+																					Jawaban Benar (Foto)
+																				</div>
+																			</div>
+																		);
+																	} else if (display.type === "mixed") {
+																		return (
+																			<div className="space-y-1">
+																				{display.items.map(
+																					(item: any, idx: number) =>
+																						item.type === "image" ? (
+																							<div key={idx} className="mb-2">
+																								<img
+																									src={getImageUrl(item.url)}
+																									alt={`jawaban benar ${
+																										idx + 1
+																									}`}
+																									className="max-w-xs max-h-32 rounded border border-green-200"
+																								/>
+																							</div>
+																						) : (
+																							<div
+																								key={idx}
+																								className="px-2 py-1 bg-green-50 rounded text-sm text-green-700"
+																							>
+																								✓ {item.value}
+																							</div>
+																						)
+																				)}
+																			</div>
+																		);
+																	}
+																	return (
+																		<div className="px-2 py-1 bg-green-50 rounded text-green-700">
+																			✓ {display.value || "-"}
+																		</div>
+																	);
+																})()}
 															</div>
 														)}
 													</div>

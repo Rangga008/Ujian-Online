@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Head from "next/head";
 import settingsApi from "@/lib/settingsApi";
 import { getAssetUrl } from "@/lib/imageUrl";
+import { SidebarProvider } from "@/context/SidebarContext";
 
 export default function App({ Component, pageProps }: AppProps) {
 	const [appSettings, setAppSettings] = useState<{
@@ -57,7 +58,7 @@ export default function App({ Component, pageProps }: AppProps) {
 	}, []);
 
 	return (
-		<>
+		<SidebarProvider>
 			<Head>
 				<title>{`${appSettings.name} - Portal Siswa`}</title>
 				<meta name="description" content={appSettings.description} />
@@ -82,6 +83,6 @@ export default function App({ Component, pageProps }: AppProps) {
 			</Head>
 			<Component {...pageProps} />
 			<Toaster position="top-right" />
-		</>
+		</SidebarProvider>
 	);
 }

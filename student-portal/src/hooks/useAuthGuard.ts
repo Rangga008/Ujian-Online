@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuthStore } from "@/store/authStore";
 
@@ -8,20 +8,29 @@ import { useAuthStore } from "@/store/authStore";
  */
 export function useAuthGuard() {
 	const router = useRouter();
-	const { isAuthenticated } = useAuthStore();
+	const { isAuthenticated, checkAuth } = useAuthStore();
+	const [isChecking, setIsChecking] = useState(true);
 
 	useEffect(() => {
 		if (!router.isReady) return;
 
+		// Check auth from localStorage
+		checkAuth();
 		const token = localStorage.getItem("student_token");
 
-		// If not authenticated or token missing, redirect to login
-		if (!isAuthenticated || !token) {
+		// If token doesn't exist, redirect immediately
+		if (!token) {
 			router.push("/login");
+			setIsChecking(false);
+			return;
 		}
-	}, [router, isAuthenticated]);
+
+		// Token exists, auth should be restored from persist middleware
+		setIsChecking(false);
+	}, [router.isReady, router, checkAuth]);
 
 	return {
 		isAuthenticated,
+		isChecking,
 	};
 }

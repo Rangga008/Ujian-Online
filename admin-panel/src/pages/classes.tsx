@@ -2,12 +2,14 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import Layout from "@/components/Layout";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
 import Pagination from "@/components/Pagination";
 import { classesApi } from "@/lib/classesApi";
 import { semestersApi } from "@/lib/semestersApi";
 import gradesApi, { Grade } from "@/lib/gradesApi";
 import { api } from "@/lib/api";
+import toast from "react-hot-toast";
 import subjectsApi from "@/lib/subjectsApi";
 import { useAuthStore } from "@/store/authStore";
 
@@ -75,6 +77,15 @@ export default function ClassesPage() {
 	const [subjectDropdownOpen, setSubjectDropdownOpen] =
 		useState<boolean>(false);
 
+	const [deleteModal, setDeleteModal] = useState<{
+		isOpen: boolean;
+		id: number | null;
+		type: string;
+	}>({
+		isOpen: false,
+		id: null,
+		type: "",
+	});
 	useEffect(() => {
 		fetchData();
 	}, []);
@@ -264,16 +275,23 @@ export default function ClassesPage() {
 		setShowModal(true);
 	};
 
-	const handleDelete = async (id: number) => {
-		if (!confirm("Yakin ingin menghapus kelas ini?")) return;
+	const handleDeleteConfirm = async () => {
+		if (!deleteModal.id) return;
 
 		try {
-			await api.delete(`/classes/${id}`);
+			await api.delete(`/classes/${deleteModal.id}`);
+			toast.success("Kelas berhasil dihapus");
+			setDeleteModal({ isOpen: false, id: null, type: "" });
 			fetchData();
 		} catch (error: any) {
 			console.error("Error deleting class:", error);
-			alert(error.response?.data?.message || "Gagal menghapus kelas");
+			toast.error(error.response?.data?.message || "Gagal menghapus kelas");
+			setDeleteModal({ isOpen: false, id: null, type: "" });
 		}
+	};
+
+	const handleDelete = (id: number) => {
+		setDeleteModal({ isOpen: true, id, type: "class" });
 	};
 
 	const resetForm = () => {
@@ -736,6 +754,17 @@ export default function ClassesPage() {
 					</div>
 				</div>
 			)}
+
+			<ConfirmationModal
+				isOpen={deleteModal.isOpen}
+				title="Hapus Kelas"
+				message="Yakin ingin menghapus kelas ini? Tindakan ini tidak dapat dibatalkan."
+				confirmText="Hapus"
+				cancelText="Batal"
+				isDangerous={true}
+				onConfirm={handleDeleteConfirm}
+				onCancel={() => setDeleteModal({ isOpen: false, id: null, type: "" })}
+			/>
 		</Layout>
 	);
 }

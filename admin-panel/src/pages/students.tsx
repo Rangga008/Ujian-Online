@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Head from "next/head";
 import Layout from "@/components/Layout";
 import ActiveSemesterBanner from "@/components/ActiveSemesterBanner";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import Pagination from "@/components/Pagination";
 import api from "@/lib/api";
 import toast from "react-hot-toast";
@@ -28,6 +29,15 @@ export default function StudentsPage() {
 	const [importing, setImporting] = useState(false);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [itemsPerPage, setItemsPerPage] = useState(10);
+	const [deleteModal, setDeleteModal] = useState<{
+		isOpen: boolean;
+		id: number | null;
+		type: string;
+	}>({
+		isOpen: false,
+		id: null,
+		type: "",
+	});
 	const [formData, setFormData] = useState({
 		name: "",
 		email: "",
@@ -203,23 +213,24 @@ export default function StudentsPage() {
 		}
 	};
 
-	const handleDelete = async (studentId: number) => {
-		if (
-			!confirm(
-				"Yakin ingin menghapus siswa dari semester ini? Data ujian dan nilai akan ikut terhapus."
-			)
-		)
-			return;
+	const handleDeleteConfirm = async () => {
+		if (!deleteModal.id) return;
 
 		try {
-			await api.delete(`/students/${studentId}`);
+			await api.delete(`/students/${deleteModal.id}`);
 			toast.success("Siswa berhasil dihapus dari semester");
+			setDeleteModal({ isOpen: false, id: null, type: "" });
 			fetchStudents();
 		} catch (error: any) {
 			toast.error(
 				error.response?.data?.message || "Gagal menghapus siswa dari semester"
 			);
+			setDeleteModal({ isOpen: false, id: null, type: "" });
 		}
+	};
+
+	const handleDelete = (studentId: number) => {
+		setDeleteModal({ isOpen: true, id: studentId, type: "student" });
 	};
 
 	const handleDownloadTemplate = async () => {
@@ -734,6 +745,17 @@ export default function StudentsPage() {
 					</div>
 				)}
 			</div>
+
+			<ConfirmationModal
+				isOpen={deleteModal.isOpen}
+				title="Hapus Siswa"
+				message="Yakin ingin menghapus siswa dari semester ini? Data ujian dan nilai akan ikut terhapus."
+				confirmText="Hapus"
+				cancelText="Batal"
+				isDangerous={true}
+				onConfirm={handleDeleteConfirm}
+				onCancel={() => setDeleteModal({ isOpen: false, id: null, type: "" })}
+			/>
 		</Layout>
 	);
 }
